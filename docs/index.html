@@ -68,6 +68,35 @@
   .overlay button:hover { background: #26498a; }
   .overlay button:focus-visible { outline: 3px solid #f2d27a; }
   .keys { font-family: var(--font-data); font-size: 0.75rem; opacity: 0.75; }
+  /* scoreboard */
+  .overlay.panel { background: rgba(20, 24, 31, 0.94); justify-content: flex-start; padding-top: 28px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .overlay button.ghost {
+    font-family: var(--font-body); font-size: 0.92rem; font-weight: 700; padding: 7px 14px;
+    background: transparent; border: 2px solid rgba(233,238,245,0.55); outline: none;
+  }
+  .overlay button.ghost:hover { background: rgba(233,238,245,0.12); }
+  .overlay button.ghost:focus-visible { outline: 3px solid #f2d27a; }
+  .tabs { display: flex; border: 2px solid var(--sign-edge); border-radius: 6px; overflow: hidden; }
+  .overlay .tabs button { border: 0; outline: none; border-radius: 0; padding: 6px 18px; font-size: 0.95rem; background: transparent; }
+  .overlay .tabs button[aria-selected="true"] { background: var(--sign-edge); color: var(--sign); }
+  .board { list-style: none; margin: 0; padding: 0; width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 4px; }
+  .board li {
+    display: grid; grid-template-columns: 2.2em 1.6em minmax(0, 1fr) auto; align-items: center; gap: 6px;
+    padding: 6px 10px; border-radius: 4px; background: rgba(233,238,245,0.06); text-align: left;
+    font-variant-numeric: tabular-nums;
+  }
+  .board li.mine { background: rgba(242,210,122,0.22); outline: 1px solid #f2d27a; }
+  .board .rk { font-family: var(--font-data); font-weight: 600; color: #f2d27a; }
+  .board .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .board .nm small { display: block; font-size: 0.72rem; opacity: 0.65; }
+  .board .sc { font-family: var(--font-data); font-weight: 600; }
+  .board .empty { display: block; text-align: center; opacity: 0.7; background: none; }
+  .lb-status { min-height: 1.4em; font-size: 0.95rem; color: #f2d27a; }
+  .avatars { display: grid; grid-template-columns: repeat(6, 2.6rem); gap: 6px; justify-content: center; }
+  .overlay .avatars button { font-size: 1.4rem; padding: 0; height: 2.6rem; border: 2px solid transparent; outline: none; background: rgba(233,238,245,0.08); }
+  .overlay .avatars button[aria-pressed="true"] { border-color: #f2d27a; background: rgba(242,210,122,0.2); }
+  .nick { font: inherit; font-size: 1.05rem; padding: 8px 12px; border-radius: 6px; border: 2px solid var(--sign-edge); width: min(240px, 100%); text-align: center; }
 </style>
 
 </head>
@@ -97,13 +126,42 @@
       <p>빨리 걸을수록 점수 배율이 올라가요. 느긋하게 걸으면 안전하지만 점수가 적고, 비둘기들이 노리기 시작합니다.</p>
       <p class="keys">← → / A D 좌우 이동 · ↑ ↓ / W S 걷는 속도<br>Space 점프 (똥·오줌 뛰어넘기, 1초 쿨타임) · P 일시 정지<br>휴대폰은 좌우 드래그로 이동, 위아래 드래그로 속도, 탭으로 점프, II 버튼으로 정지</p>
       <button id="startBtn" type="button">산책 시작</button>
+      <div class="row lb-only" hidden>
+        <button class="ghost" id="boardBtn" type="button">🏆 순위 보기</button>
+        <button class="ghost" id="profileBtn" type="button">프로필</button>
+      </div>
     </div>
     <div class="overlay" id="overScreen" hidden>
       <h2>Merde alors!</h2>
       <div class="big" id="finalScore">0점</div>
       <p class="keys" id="finalDist">0 m</p>
       <p id="overMsg"></p>
+      <p class="lb-status lb-only" id="lbStatus" hidden></p>
+      <button class="ghost lb-only" id="lbActionBtn" type="button" hidden>닉네임 정하고 기록 올리기</button>
       <button id="retryBtn" type="button">다시 걷기</button>
+      <button class="ghost lb-only" id="overBoardBtn" type="button" hidden>🏆 순위 보기</button>
+    </div>
+    <div class="overlay panel" id="boardScreen" hidden>
+      <h2>순위</h2>
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" id="tabAll" aria-selected="true">전체</button>
+        <button type="button" role="tab" id="tabWeek" aria-selected="false">이번 주</button>
+      </div>
+      <ol class="board" id="boardList"></ol>
+      <p class="lb-status" id="boardMe"></p>
+      <button class="ghost" id="boardClose" type="button">닫기</button>
+    </div>
+    <div class="overlay panel" id="profileScreen" hidden>
+      <h2>프로필</h2>
+      <p id="profileHint">순위표에 보일 이모지와 닉네임을 정하세요.</p>
+      <div class="avatars" id="avatarGrid"></div>
+      <label for="nickInput" class="keys">닉네임 (1~12자)</label>
+      <input class="nick" id="nickInput" maxlength="12" autocomplete="off">
+      <p class="lb-status" id="profileStatus"></p>
+      <div class="row">
+        <button id="profileSave" type="button">저장</button>
+        <button class="ghost" id="profileCancel" type="button">취소</button>
+      </div>
     </div>
   </div>
 </div>
@@ -202,7 +260,7 @@
   $('best').textContent = best.toLocaleString();
 
   // score: metres walked × pace multiplier (60% pace → ×0.5, 100% → ×1, 140% → ×2)
-  let score = 0, slowT = 0, slowWarned = false;
+  let score = 0, slowT = 0, slowWarned = false, runMs = 0;
   const scoreMult = p => p < 1 ? 0.5 + (p - PACE_MIN) / (1 - PACE_MIN) * 0.5 : 1 + (p - 1) / (PACE_MAX - 1);
 
   let state = 'idle';
@@ -226,7 +284,7 @@
     resetTrack();
     position = 0; speed = 1500; pace = 1; jumpT = 0; jumpCd = 0; dist = 0; lives = 3; invuln = 0; playerX = 0; step = 0; skyOffset = 0; shake = 0; flash = null;
     poops = []; dogs = []; peers = []; birds = []; drops = []; stains = []; texts = []; trucks = [];
-    edgeT = 0; edgeSide = 0; cleanT = 14; score = 0; slowT = 0; slowWarned = false;
+    edgeT = 0; edgeSide = 0; cleanT = 14; score = 0; slowT = 0; slowWarned = false; runMs = 0;
     spawnT = 0.3; dogT = 2.5; birdT = 5; peeT = 3; shownPlace = -1; plate = null;
     updateHud(); updatePlace();
   }
@@ -380,6 +438,7 @@
     $('overMsg').textContent = msg;
     $('overScreen').hidden = false;
     $('retryBtn').focus();
+    lbGameOver({ score: sc, dist: d, place: placeAt(dist), duration: Math.round(runMs) });
   }
 
   function loop(t) {
@@ -402,6 +461,7 @@
     position += speed * dt;
     dist = position / UNITS_PER_M;
     step += dt * speed / 330;
+    runMs += dt * 1000;
     const pz = PZ(), pseg = segAt(pz);
 
     // steering; bends pull the walker toward the outside, like a car in OutRun
@@ -1264,6 +1324,8 @@
     ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down'
   };
   addEventListener('keydown', e => {
+    if (e.target && e.target.tagName === 'INPUT') { if (e.key === 'Enter') saveProfile(); return; } // typing a nickname
+    if (!$('boardScreen').hidden || !$('profileScreen').hidden) { if (e.key === 'Escape') closePanels(); return; }
     if ((e.key === 'p' || e.key === 'P' || e.key === 'Escape') && (state === 'play' || state === 'paused')) { e.preventDefault(); if (!e.repeat) togglePause(); return; }
     if (state === 'paused') return;
     if (e.key === ' ' && state === 'play') { e.preventDefault(); if (!e.repeat) jump(); return; }
@@ -1289,6 +1351,187 @@
 
   $('startBtn').addEventListener('click', start);
   $('retryBtn').addEventListener('click', start);
+
+  // ---------- scoreboard (Supabase) ----------
+  // Fill in the Supabase project's URL and publishable (anon) key. The publishable key is
+  // meant to be public; never put the service_role/secret key here. The scoreboard only
+  // runs on the GitHub Pages site (and localhost for testing); elsewhere the game plays without it.
+  const LB_URL = '';
+  const LB_KEY = '';
+  const LB_ON = !!(LB_URL && LB_KEY) && /(^|\.)github\.io$|^localhost$|^127\.0\.0\.1$/.test(location.hostname);
+  const AVATARS = ['🥖', '🗼', '🐕', '🐦', '👞', '🥐', '🧀', '🍷', '🎨', '🚲', '🐀', '🎩'];
+  const LB_ERRORS = {
+    bad_nickname: '닉네임은 1~12자로 정해 주세요.',
+    bad_score: '기록을 확인할 수 없어 올리지 못했어요.',
+    too_fast: '잠시 뒤에 다시 올려 주세요.',
+    bad_origin: '이 주소에서는 기록을 올릴 수 없어요.',
+    bad_secret: '이 브라우저의 플레이어 정보가 맞지 않아요.'
+  };
+  let profile = null, pendingRun = null, boardPeriod = 'all', afterProfile = null, pickedAvatar = null;
+  try { profile = JSON.parse(localStorage.getItem('ppd-profile') || 'null'); } catch (e) {}
+
+  function ensureIdentity() {
+    if (profile && profile.id && profile.secret) return profile;
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    profile = {
+      id: crypto.randomUUID(),
+      secret: Array.from(bytes, b => b.toString(16).padStart(2, '0')).join(''),
+      nickname: '', avatar: null
+    };
+    return profile;
+  }
+  function storeProfile() { try { localStorage.setItem('ppd-profile', JSON.stringify(profile)); } catch (e) {} }
+  const hasNickname = () => !!(profile && profile.nickname);
+  const errText = e => LB_ERRORS[Object.keys(LB_ERRORS).find(k => String(e.message).includes(k))] || '서버에 연결하지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+
+  async function rpc(fn, body) {
+    const res = await fetch(`${LB_URL}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: { apikey: LB_KEY, Authorization: `Bearer ${LB_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error((data && (data.message || data.hint)) || 'HTTP ' + res.status);
+    return data;
+  }
+
+  function updateProfileButton() {
+    $('profileBtn').textContent = hasNickname() ? `${profile.avatar || '🙂'} ${profile.nickname}` : '닉네임 정하기';
+  }
+
+  // one row of the board: rank, emoji, nickname with distance/landmark, score
+  function boardRow(r) {
+    const li = document.createElement('li');
+    if (r.mine) li.className = 'mine';
+    const cells = [
+      ['rk', r.rank], ['', r.avatar || '🙂'],
+      ['nm', r.nickname, `${r.dist.toLocaleString()} m · ${PLACES[r.place] ? PLACES[r.place].ko : ''}`],
+      ['sc', r.score.toLocaleString()]
+    ];
+    for (const [cls, text, sub] of cells) {
+      const span = document.createElement('span');
+      if (cls) span.className = cls;
+      span.textContent = text;
+      if (sub) { const s = document.createElement('small'); s.textContent = sub; span.appendChild(s); }
+      li.appendChild(span);
+    }
+    return li;
+  }
+  function renderBoard(data) {
+    const list = $('boardList');
+    list.replaceChildren();
+    if (!data.top.length) {
+      const li = document.createElement('li'); li.className = 'empty';
+      li.textContent = boardPeriod === 'week' ? '이번 주 기록이 아직 없어요. 첫 주인공이 되어 보세요!' : '아직 기록이 없어요.';
+      list.appendChild(li);
+    } else data.top.forEach(r => list.appendChild(boardRow(r)));
+    const me = data.me;
+    $('boardMe').textContent = me
+      ? `내 순위 ${me.rank}위 / ${data.total}명 · ${me.score.toLocaleString()}점`
+      : `참가자 ${data.total}명`;
+  }
+  async function loadBoard() {
+    $('tabAll').setAttribute('aria-selected', String(boardPeriod === 'all'));
+    $('tabWeek').setAttribute('aria-selected', String(boardPeriod === 'week'));
+    $('boardMe').textContent = '불러오는 중…';
+    try {
+      renderBoard(await rpc('leaderboard', { p_period: boardPeriod, p_player: profile ? profile.id : null }));
+    } catch (e) {
+      $('boardList').replaceChildren(); $('boardMe').textContent = errText(e);
+    }
+  }
+  function openBoard(period = 'all') { boardPeriod = period; $('boardScreen').hidden = false; $('boardClose').focus(); loadBoard(); }
+
+  function openProfile(hint, after) {
+    afterProfile = after || null;
+    ensureIdentity();
+    pickedAvatar = profile.avatar || AVATARS[Math.floor(Math.random() * AVATARS.length)];
+    $('profileHint').textContent = hint || '순위표에 보일 이모지와 닉네임을 정하세요.';
+    $('nickInput').value = profile.nickname || '산책자' + Math.floor(1000 + Math.random() * 9000);
+    $('profileStatus').textContent = '';
+    renderAvatars();
+    $('profileScreen').hidden = false;
+    $('nickInput').focus(); $('nickInput').select();
+  }
+  function renderAvatars() {
+    const grid = $('avatarGrid');
+    grid.replaceChildren();
+    for (const a of AVATARS) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = a; b.setAttribute('aria-pressed', String(a === pickedAvatar)); b.setAttribute('aria-label', '이모지 ' + a);
+      b.addEventListener('click', () => { pickedAvatar = a; renderAvatars(); });
+      grid.appendChild(b);
+    }
+  }
+  async function saveProfile() {
+    const nick = $('nickInput').value.trim();
+    if (nick.length < 1 || nick.length > 12) { $('profileStatus').textContent = LB_ERRORS.bad_nickname; return; }
+    profile.nickname = nick; profile.avatar = pickedAvatar;
+    storeProfile(); updateProfileButton();
+    $('profileStatus').textContent = '저장하는 중…';
+    if (!pendingRun) { // with a pending run, the submit below saves the profile too
+      try { await rpc('save_profile', { p_player: profile.id, p_secret: profile.secret, p_nickname: nick, p_avatar: pickedAvatar }); }
+      catch (e) { $('profileStatus').textContent = errText(e); return; }
+    }
+    $('profileScreen').hidden = true;
+    const next = afterProfile; afterProfile = null;
+    if (next) next();
+  }
+  function closePanels() {
+    $('boardScreen').hidden = true; $('profileScreen').hidden = true; afterProfile = null;
+    (state === 'over' ? $('retryBtn') : $('startBtn')).focus();
+  }
+
+  // after each game: post the run (asking for a nickname the first time), then show the ranks
+  function lbGameOver(run) {
+    if (!LB_ON) return;
+    pendingRun = run;
+    $('overBoardBtn').hidden = false;
+    if (!hasNickname()) {
+      $('lbStatus').hidden = false;
+      $('lbStatus').textContent = '닉네임을 정하면 이 기록이 순위에 올라가요.';
+      $('lbActionBtn').textContent = '닉네임 정하고 기록 올리기';
+      $('lbActionBtn').hidden = false;
+      return;
+    }
+    submitPending();
+  }
+  async function submitPending() {
+    if (!pendingRun) return;
+    const run = pendingRun;
+    $('lbStatus').hidden = false; $('lbActionBtn').hidden = true;
+    $('lbStatus').textContent = '기록 올리는 중…';
+    try {
+      const r = await rpc('submit_run', {
+        p_player: profile.id, p_secret: profile.secret, p_nickname: profile.nickname, p_avatar: profile.avatar,
+        p_score: run.score, p_dist: run.dist, p_place: run.place, p_duration_ms: run.duration
+      });
+      pendingRun = null;
+      const a = r.all.me, w = r.week.me;
+      $('lbStatus').textContent = `전체 ${a ? a.rank : '-'}위 · 이번 주 ${w ? w.rank : '-'}위` + (a && a.score === run.score ? ' (내 최고 기록!)' : '');
+    } catch (e) {
+      $('lbStatus').textContent = errText(e);
+      $('lbActionBtn').textContent = '다시 올리기';
+      $('lbActionBtn').hidden = false;
+    }
+  }
+
+  if (LB_ON) {
+    document.querySelectorAll('.lb-only').forEach(el => { if (el.closest('#startScreen')) el.hidden = false; });
+    updateProfileButton();
+  }
+  $('boardBtn').addEventListener('click', () => openBoard('all'));
+  $('overBoardBtn').addEventListener('click', () => openBoard('all'));
+  $('profileBtn').addEventListener('click', () => openProfile());
+  $('lbActionBtn').addEventListener('click', () => {
+    if (!hasNickname()) openProfile('닉네임을 정하면 방금 기록이 순위에 올라가요.', submitPending);
+    else submitPending();
+  });
+  $('tabAll').addEventListener('click', () => { boardPeriod = 'all'; loadBoard(); });
+  $('tabWeek').addEventListener('click', () => { boardPeriod = 'week'; loadBoard(); });
+  $('boardClose').addEventListener('click', closePanels);
+  $('profileSave').addEventListener('click', saveProfile);
+  $('profileCancel').addEventListener('click', closePanels);
   addEventListener('resize', resize);
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play') togglePause(); });
   $('pauseBtn').addEventListener('mousedown', e => e.preventDefault()); // keep focus off so Space isn't doubled
