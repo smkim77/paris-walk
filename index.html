@@ -1349,8 +1349,8 @@
   // Fill in the Supabase project's URL and publishable (anon) key. The publishable key is
   // meant to be public; never put the service_role/secret key here. The scoreboard only
   // runs on the GitHub Pages site (and localhost for testing); elsewhere the game plays without it.
-  const LB_URL = '';
-  const LB_KEY = '';
+  const LB_URL = 'https://liiephbpoccyyahwkqrv.supabase.co';
+  const LB_KEY = 'sb_publishable_erfuUfZP4osTTLx90rlksw_NZ_HPdV5';
   const LB_ON = !!(LB_URL && LB_KEY) && /(^|\.)github\.io$|^localhost$|^127\.0\.0\.1$/.test(location.hostname);
   const AVATARS = ['🥖', '🗼', '🐕', '🐦', '👞', '🥐', '🧀', '🍷', '🎨', '🚲', '🐀', '🎩'];
   const LB_ERRORS = {
