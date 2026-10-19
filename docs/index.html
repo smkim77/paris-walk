@@ -1,0 +1,1317 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);box-sizing:border-box}body{margin:0}img{max-width:100%}</style>
+<title>파리 똥 피하기</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gowun+Dodum&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  /* Layout: one-screen arcade — Paris-blue street-sign header, an OutRun-style pseudo-3D street fills the rest. Single deliberate look (no theme switch). */
+  :root {
+    --sign: #1d3b6e;        /* Paris street-sign enamel blue */
+    --sign-edge: #e9eef5;   /* sign border white */
+    --stone: #cfc6b8;       /* limestone pavement */
+    --ink: #1b1e24;
+    --merde: #6b4423;
+    --alert: #c8372d;
+    --font-display: "Black Han Sans", "Malgun Gothic", sans-serif;
+    --font-body: "Gowun Dodum", "Malgun Gothic", sans-serif;
+    --font-data: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+    color-scheme: light;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    background: #2a2f38; color: var(--ink); font-family: var(--font-body);
+    display: flex; flex-direction: column; align-items: center;
+    padding-block: 12px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    box-sizing: border-box; gap: 10px; overflow: hidden;
+  }
+  .wrap { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
+  .sign {
+    background: var(--sign); color: #fff; border: 3px solid var(--sign-edge);
+    outline: 2px solid var(--sign); border-radius: 6px; padding: 8px 14px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .sign h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 1.45rem; letter-spacing: 0.02em; text-wrap: balance; }
+  .sign small { display: block; font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.75; font-family: var(--font-data); }
+  .arr { font-family: var(--font-data); font-size: 0.8rem; text-align: right; line-height: 1.2; opacity: 0.85; }
+  .hud { display: flex; gap: 6px; color: #e9e4da; font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 0.85rem; }
+  .hud div { flex: 1; min-width: 0; background: #20242b; border-radius: 4px; padding: 6px 8px; display: flex; flex-direction: column; }
+  .hud div.score { flex: 1.4; }
+  .hud span { font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; white-space: nowrap; }
+  .hud b { font-size: 1.05rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #score { color: #f2d27a; }
+  .pause-btn {
+    position: absolute; top: max(10px, env(safe-area-inset-top, 0px)); right: 10px; width: 40px; height: 40px;
+    font: 600 1rem var(--font-data); color: #fff; background: rgba(27,30,36,0.6); border: 2px solid rgba(233,238,245,0.7);
+    border-radius: 6px; cursor: pointer;
+  }
+  .pause-btn:focus-visible { outline: 3px solid #f2d27a; }
+  #shoes { color: #f2b8a0; letter-spacing: 0.1em; }
+  .stage { position: relative; flex: 1; min-height: 0; border-radius: 6px; overflow: hidden; touch-action: none; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; padding: 24px; text-align: center; background: rgba(27, 30, 36, 0.7); color: #fff; overflow-y: auto;
+  }
+  .overlay h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 2rem; text-wrap: balance; }
+  .overlay p { margin: 0; max-width: 34ch; line-height: 1.5; font-size: 0.92rem; }
+  .overlay .big { font-family: var(--font-data); font-size: 2.4rem; font-weight: 600; color: #f2d27a; }
+  .overlay button {
+    font: inherit; font-family: var(--font-display); font-size: 1.15rem; background: var(--sign); color: #fff;
+    border: 3px solid var(--sign-edge); outline: 2px solid var(--sign); border-radius: 6px; padding: 10px 28px; cursor: pointer;
+  }
+  .overlay button:hover { background: #26498a; }
+  .overlay button:focus-visible { outline: 3px solid #f2d27a; }
+  .keys { font-family: var(--font-data); font-size: 0.75rem; opacity: 0.75; }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header class="sign">
+    <div>
+      <small id="street">Avenue de Suffren</small>
+      <h1>파리 똥 피하기</h1>
+    </div>
+    <div class="arr" id="arr">PARIS<br>7<sup>e</sup> Arr<sup>t</sup></div>
+  </header>
+  <div class="hud">
+    <div class="score"><span>점수</span><b id="score">0</b></div>
+    <div><span>거리</span><b id="dist">0 m</b></div>
+    <div><span>구두</span><b id="shoes">👞👞👞</b></div>
+    <div class="score"><span>최고 점수</span><b id="best">0</b></div>
+  </div>
+  <div class="stage" id="stage">
+    <canvas id="c"></canvas>
+    <button class="pause-btn" id="pauseBtn" type="button" aria-label="일시 정지" hidden>II</button>
+    <div class="overlay" id="startScreen">
+      <h2>Attention, la crotte!</h2>
+      <p>에펠탑에서 사크레쾨르까지, 파리 명소를 지나 최대한 멀리 걸어가세요. 구두 세 켤레가 다 망가지면 끝입니다.</p>
+      <p>개똥은 피하고, 파리 떼가 꼬인 똥은 더 크게 돌아가세요. 벽을 보고 선 행인 근처엔 오줌 웅덩이가 남고, 비둘기가 지나가면 바닥 표적을 피하세요. 횡단보도에선 차를 조심!</p>
+      <p>구석만 따라 걷는 건 위험해요. 벽 쪽엔 카페 테라스, 연석 쪽엔 살수차 물줄기가 있고, 한쪽 구석에 오래 붙어 있으면 바로 앞에 행인이 나타납니다.</p>
+      <p>빨리 걸을수록 점수 배율이 올라가요. 느긋하게 걸으면 안전하지만 점수가 적고, 비둘기들이 노리기 시작합니다.</p>
+      <p class="keys">← → / A D 좌우 이동 · ↑ ↓ / W S 걷는 속도<br>Space 점프 (똥·오줌 뛰어넘기, 1초 쿨타임) · P 일시 정지<br>휴대폰은 좌우 드래그로 이동, 위아래 드래그로 속도, 탭으로 점프, II 버튼으로 정지</p>
+      <button id="startBtn" type="button">산책 시작</button>
+    </div>
+    <div class="overlay" id="overScreen" hidden>
+      <h2>Merde alors!</h2>
+      <div class="big" id="finalScore">0점</div>
+      <p class="keys" id="finalDist">0 m</p>
+      <p id="overMsg"></p>
+      <button id="retryBtn" type="button">다시 걷기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const stage = document.getElementById('stage');
+  const $ = id => document.getElementById(id);
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- pseudo-3D street (OutRun-style segment renderer) ----------
+  // The sidewalk is a list of short segments. Each has a curve (sideways bend that
+  // accumulates into the distance) and a width (narrow stretches). World units:
+  // 250 units = 1 m; lateral positions are in "road units" where ±1 is the sidewalk edge.
+  const SEG_LEN = 200, DRAW = 160, ROAD_W = 700, CAM_H = 1000, CAM_DEPTH = 0.84;
+  const PLAYER_Z = CAM_H * CAM_DEPTH, UNITS_PER_M = 250, M_PER_SEG = SEG_LEN / UNITS_PER_M;
+  const WALL_H = 2600, ROOF_H = 3200;
+  const ASPHALT = '#3d4148';
+
+  let W = 0, H = 0, dpr = 1, HORIZON = 0, K = 0, K2 = 0;
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const r = stage.getBoundingClientRect();
+    W = r.width; H = r.height;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    HORIZON = H * 0.44;
+    K = H * 0.96 - HORIZON;               // vertical: walker's feet near the bottom
+    K2 = 0.33 * W * CAM_H / ROAD_W;       // horizontal: the (1.2× wide) sidewalk spans ~80% of the width at the walker
+    if (state !== 'play' && segs.length) render();
+  }
+
+  // ---------- track generation ----------
+  let segs = [], gen = null, crossings = [];
+  const ease = t => t * t * (3 - 2 * t);
+  function resetTrack() { segs = []; crossings = []; gen = { w: 1, nextCross: 70, lastTerrace: -999 }; }
+  // sidewalk width relative to the obstacles (1.2 = 20% wider than the original layout)
+  const SIDEWALK = 1.2;
+  function pushSeg(curve, w, crossing, k = -1, terrace = false) {
+    const i = segs.length, bld = Math.floor(i / 7);
+    segs.push({
+      i, curve, w: w * SIDEWALK, crossing, ck: k, bld, shop: bld % 3 !== 1, terrace,
+      tree: !crossing && i % 5 === 0, lamp: !crossing && i % 9 === 4, morris: !crossing && i % 53 === 31
+    });
+  }
+  function addCrossing() {
+    const start = segs.length;
+    for (let k = 0; k < 5; k++) pushSeg(0, gen.w, true, k);
+    crossings.push({ z0: start * SEG_LEN, z1: (start + 5) * SEG_LEN, lanes: [(start + 1.6) * SEG_LEN, (start + 3.4) * SEG_LEN], cars: [], spawn: [0.2, 0.8], primed: false });
+  }
+  function genMore(n) {
+    while (segs.length < n) {
+      const m = segs.length * M_PER_SEG;
+      if (m >= gen.nextCross) { addCrossing(); gen.nextCross = m + 150 + Math.random() * 70; continue; }
+      const early = segs.length < 40;
+      const len = 10 + Math.floor(Math.random() * 18);
+      const curve = early ? 0 : Math.random() < 0.75 ? (Math.random() < 0.5 ? -1 : 1) * (1.5 + Math.random() * 2.5) : 0;
+      const wT = early ? 1 : Math.random() < 0.3 ? 0.55 + Math.random() * 0.15 : 1;
+      const w0 = gen.w, enter = Math.max(2, len >> 2), leave = Math.max(2, len >> 2), hold = len - enter - leave;
+      // now and then a short café terrace (2–3 tables) spills out from the wall,
+      // never two close together
+      let tStart = -1, tLen = 0;
+      if (!early && Math.random() < 0.3 && segs.length - gen.lastTerrace > 70) {
+        tLen = Math.random() < 0.5 ? 3 : 5;               // tables sit on even segments → 2 or 3 tables
+        tStart = 1 + Math.floor(Math.random() * Math.max(1, len - tLen - 2));
+        if ((segs.length + tStart) % 2) tStart++;
+      }
+      for (let i = 0; i < len; i++) {
+        const c = i < enter ? curve * ease(i / enter) : i < enter + hold ? curve : curve * (1 - ease((i - enter - hold) / leave));
+        const terrace = tStart >= 0 && i >= tStart && i < tStart + tLen;
+        if (terrace) gen.lastTerrace = segs.length;
+        pushSeg(c, w0 + (wT - w0) * ease((i + 1) / len), false, -1, terrace);
+      }
+      gen.w = wT;
+    }
+  }
+  const segAt = z => { const i = Math.max(0, Math.floor(z / SEG_LEN)); genMore(i + 1); return segs[i]; };
+  const nearCrossing = z => segAt(z).crossing || segAt(z + SEG_LEN).crossing || segAt(Math.max(0, z - SEG_LEN)).crossing;
+
+  // ---------- landmarks ----------
+  const PLACE_LEN = 220; // metres per landmark stretch
+  const PLACES = [
+    { name: 'Tour Eiffel', ko: '에펠탑', street: 'Avenue de Suffren', arr: '7<sup>e</sup>', draw: drawEiffel },
+    { name: 'Arc de Triomphe', ko: '개선문', street: 'Avenue Marceau', arr: '8<sup>e</sup>', draw: drawArc },
+    { name: 'Musée du Louvre', ko: '루브르', street: 'Rue de Rivoli', arr: '1<sup>er</sup>', draw: drawLouvre },
+    { name: 'Notre-Dame', ko: '노트르담', street: 'Quai de Montebello', arr: '5<sup>e</sup>', draw: drawNotreDame },
+    { name: 'Sacré-Cœur', ko: '사크레쾨르', street: 'Rue Lepic', arr: '18<sup>e</sup>', draw: drawSacreCoeur }
+  ];
+  const placeAt = d => Math.max(0, Math.floor(d / PLACE_LEN)) % PLACES.length;
+
+  // ---------- state ----------
+  let best = 0;
+  try { best = Number(localStorage.getItem('ppd-best-score')) || 0; } catch (e) {}
+  $('best').textContent = best.toLocaleString();
+
+  // score: metres walked × pace multiplier (60% pace → ×0.5, 100% → ×1, 140% → ×2)
+  let score = 0, slowT = 0, slowWarned = false;
+  const scoreMult = p => p < 1 ? 0.5 + (p - PACE_MIN) / (1 - PACE_MIN) * 0.5 : 1 + (p - 1) / (PACE_MAX - 1);
+
+  let state = 'idle';
+  let position = 0, speed = 1500, dist = 0, lives = 3, invuln = 0, playerX = 0, step = 0, skyOffset = 0, shake = 0, flash = null;
+  let poops = [], dogs = [], peers = [], birds = [], drops = [], stains = [], texts = [], trucks = [];
+  let edgeT = 0, edgeSide = 0, cleanT = 0; // how long the walker has hugged one edge; street-cleaner timer
+  // pace: the walker's own speed setting, from a slow stroll (0.6×) to a hurry (1.4×)
+  const PACE_MIN = 0.6, PACE_MAX = 1.4;
+  let pace = 1;
+  // jump: Space hops over poop and pee for a moment; another jump only after the cooldown
+  const JUMP_TIME = 0.55, JUMP_COOLDOWN = 1;
+  let jumpT = 0, jumpCd = 0;
+  const airborne = () => jumpT > 0;
+  const jumpHeight = () => jumpT > 0 ? Math.sin(Math.PI * (1 - jumpT / JUMP_TIME)) : 0;
+  function jump() {
+    if (state !== 'play' || jumpCd > 0) return;
+    jumpT = JUMP_TIME; jumpCd = JUMP_COOLDOWN;
+  }  let keys = {}, drag = null, last = 0, spawnT = 0, dogT = 0, birdT = 0, peeT = 0, shownPlace = -1, plate = null;
+
+  function reset() {
+    resetTrack();
+    position = 0; speed = 1500; pace = 1; jumpT = 0; jumpCd = 0; dist = 0; lives = 3; invuln = 0; playerX = 0; step = 0; skyOffset = 0; shake = 0; flash = null;
+    poops = []; dogs = []; peers = []; birds = []; drops = []; stains = []; texts = []; trucks = [];
+    edgeT = 0; edgeSide = 0; cleanT = 14; score = 0; slowT = 0; slowWarned = false;
+    spawnT = 0.3; dogT = 2.5; birdT = 5; peeT = 3; shownPlace = -1; plate = null;
+    updateHud(); updatePlace();
+  }
+  function updateHud() {
+    $('dist').textContent = Math.floor(dist) + ' m';
+    $('score').textContent = Math.floor(score).toLocaleString();
+    $('shoes').textContent = '👞'.repeat(lives) + '·'.repeat(3 - lives);
+  }
+  function updatePlace() {
+    const i = placeAt(dist);
+    if (i === shownPlace) return;
+    shownPlace = i;
+    const p = PLACES[i];
+    $('street').textContent = p.street;
+    $('arr').innerHTML = 'PARIS<br>' + p.arr + ' Arr<sup>t</sup>';
+    if (state === 'play') plate = { text: p.name, ko: p.ko, life: 2.6 };
+  }
+
+  // ---------- spawning ----------
+  const PZ = () => position + PLAYER_Z;
+  function spawnPoop(z, x, fresh, kind = 'dog') {
+    if (nearCrossing(z)) return;
+    const seg = segAt(z);
+    const r = kind === 'pee' ? 0.17 + Math.random() * 0.05 : 0.08 + Math.random() * 0.04;
+    poops.push({
+      z, x: x ?? (Math.random() * 2 - 1) * (seg.w - r - 0.05), r, fresh: !!fresh, kind,
+      steam: Math.random() * 6, rot: Math.random() * Math.PI, age: 0, flies: 0,
+      ...flySchedule(kind)
+    });
+  }
+  // About 40% of dog poops get a fly swarm. Of those, 4 in 10 already have flies when
+  // they come into view; 6 in 10 look clean until the walker gets close, then the flies arrive.
+  function flySchedule(kind) {
+    if (kind !== 'dog' || Math.random() >= 0.4) return { flyAt: Infinity, flyNear: 0 };
+    if (Math.random() < 0.4) return { flyAt: 0.3 + Math.random() * 1.4, flyNear: 0 };
+    return { flyAt: Infinity, flyNear: 2600 + Math.random() * 2400 };
+  }
+  // Dog temperaments: trot, zigzag (weaves back and forth), sniff (stops to do its business),
+  // dash (small and fast), turnback (changes its mind halfway), diagonal (cuts across at an angle)
+  function spawnDog() {
+    const z = PZ() + 3500 + Math.random() * 5000;
+    if (nearCrossing(z)) return;
+    const seg = segAt(z), dir = Math.random() < 0.5 ? 1 : -1;
+    const kinds = ['trot', 'zigzag', 'sniff', 'sniff', 'dash', 'turnback', 'diagonal'];
+    const kind = kinds[Math.floor(Math.random() * kinds.length)];
+    dogs.push({
+      z, x: -dir * 2.4, dir, kind, size: kind === 'dash' ? 0.75 : 0.85 + Math.random() * 0.4,
+      v: kind === 'dash' ? 1.8 + Math.random() * 0.6 : kind === 'sniff' ? 0.45 + Math.random() * 0.2 : 0.6 + Math.random() * 0.35,
+      zv: kind === 'diagonal' ? (Math.random() < 0.5 ? -1 : 1) * (250 + Math.random() * 250) : 0,
+      t: Math.random() * 6, state: 'walk', sniffT: 0, leg: 0,
+      dropAt: (Math.random() * 2 - 1) * (seg.w - 0.2), dropped: false,
+      color: ['#8a5a2b', '#e8dcc6', '#2b2b2b', '#b98a4e', '#d8d2c4', '#5b3a24'][Math.floor(Math.random() * 6)]
+    });
+  }
+  // A passer-by stops at the wall (or the curb), pees, then walks off leaving a puddle in the corner.
+  // ambush: a peer that pops out right ahead on a given side and is done almost at once
+  function spawnPeer(ambushSide) {
+    const z = ambushSide ? PZ() + speed * 1.25 : PZ() + 9000 + Math.random() * 6000;
+    if (nearCrossing(z)) return false;
+    const seg = segAt(z);
+    let side = ambushSide || (Math.random() < 0.5 ? -1 : 1);
+    if (side > 0 && seg.terrace) { if (ambushSide) return false; side = -1; } // no room against a café terrace
+    peers.push({
+      z, side, x: side * (seg.w - 0.1), t: 0, T: ambushSide ? 0.3 : 1.6 + Math.random() * 0.6, done: false, leave: 0, bob: Math.random() * 6,
+      coat: ['#4a5568', '#5b4636', '#2f5d46', '#6b3a4a'][Math.floor(Math.random() * 4)]
+    });
+    return true;
+  }
+  // Paris street-cleaning truck: drives slowly up the street, hosing the curb-side edge of the sidewalk
+  function spawnCleaner() {
+    trucks.push({ z: PZ() + 9000 + Math.random() * 3000, v: 450 + Math.random() * 150, t: 0 });
+  }
+  const SPRAY_LEN = 650, SPRAY_REACH = 0.42; // spray covers ±650 units around the truck, 0.42 road units in from the curb
+  // café table + two bistro chairs on every other terrace segment
+  const TERRACE_HALF = 0.2;
+  const terraceZ = s => (s.i + 0.5) * SEG_LEN;
+  const terraceX = s => s.w - 0.22;
+  function spawnBird() {
+    const fromLeft = Math.random() < 0.5;
+    birds.push({
+      x: fromLeft ? -30 : W + 30, y: HORIZON * (0.25 + Math.random() * 0.55),
+      vx: (fromLeft ? 1 : -1) * (150 + Math.random() * 80), dropAt: W * (0.3 + Math.random() * 0.4), dropped: false, flap: Math.random() * 6
+    });
+  }
+  // The dropping is aimed near the walker: its ground target lies ahead by exactly
+  // the distance the walker covers before it lands.
+  function dropFromBird(b) {
+    const T = Math.max(0.75, 1.25 - dist / 2000);
+    const z = PZ() + speed * T, seg = segAt(z);
+    const x = Math.max(-seg.w + 0.12, Math.min(seg.w - 0.12, playerX + (Math.random() - 0.5) * 0.35));
+    drops.push({ sx: b.x, sy: b.y, z, x, t: 0, T, r: 0.2 });
+  }
+  const CAR_COLORS = ['#c8372d', '#e8e4d8', '#2f5d46', '#1d3b6e', '#d9a441', '#6b6f78'];
+  // Irregular traffic: usually a long quiet gap, sometimes a car right behind another,
+  // now and then a really long lull.
+  function nextCarGap() {
+    const r = Math.random();
+    if (r < 0.2) return 0.7 + Math.random() * 0.5;
+    if (r < 0.85) return 2.5 + Math.random() * 3.5;
+    return 6 + Math.random() * 4;
+  }
+  function makeCar(lane, x) {
+    const dir = lane === 0 ? 1 : -1;
+    return { lane, dir, x: x ?? -dir * 6, v: 2.8 + Math.random() * 1.2 + Math.min(dist * 0.004, 1.5), len: 1.9 + Math.random() * 0.4, color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)] };
+  }
+
+  function takeHit(label, color) {
+    lives--; invuln = 1.4; shake = reduceMotion ? 0 : 0.35; flash = { color, t: 0.35 };
+    texts.push({ text: label, life: 1.1, dy: 0 });
+    updateHud();
+    if (lives <= 0) { render(); gameOver(); return true; }
+    return false;
+  }
+
+  function start() {
+    reset();
+    state = 'play';
+    $('startScreen').hidden = true; $('overScreen').hidden = true; $('pauseBtn').hidden = false;
+    plate = { text: PLACES[0].name, ko: PLACES[0].ko, life: 2.6 };
+    last = performance.now();
+    requestAnimationFrame(loop);
+  }
+
+  // Space / II button: freeze everything; resume where you left off
+  function togglePause() {
+    if (state === 'play') {
+      state = 'paused'; keys = {}; drag = null;
+      render();
+      $('pauseBtn').textContent = '▶'; $('pauseBtn').setAttribute('aria-label', '계속하기');
+    } else if (state === 'paused') {
+      state = 'play';
+      $('pauseBtn').textContent = 'II'; $('pauseBtn').setAttribute('aria-label', '일시 정지');
+      last = performance.now();
+      requestAnimationFrame(loop);
+    }
+  }
+
+  function gameOver() {
+    state = 'over';
+    $('pauseBtn').hidden = true;
+    const d = Math.floor(dist), p = PLACES[placeAt(dist)], sc = Math.floor(score);
+    let msg = `${p.ko} 근처에서 구두가 다 망가졌습니다. `;
+    if (d < 100) msg += '파리지앵이 되려면 아직 멀었어요.';
+    else if (d < 400) msg += '바게트 하나 사 들고 돌아가세요.';
+    else if (d < 800) msg += '꽤 능숙한 산책가예요.';
+    else msg += '당신은 진정한 똥 회피의 달인입니다.';
+    if (sc > best) { best = sc; msg = '최고 점수! ' + msg; try { localStorage.setItem('ppd-best-score', String(best)); } catch (e) {} }
+    $('best').textContent = best.toLocaleString();
+    $('finalScore').textContent = sc.toLocaleString() + '점';
+    $('finalDist').textContent = d + ' m 걸음 · ' + p.ko + ' 근처';
+    $('overMsg').textContent = msg;
+    $('overScreen').hidden = false;
+    $('retryBtn').focus();
+  }
+
+  function loop(t) {
+    if (state !== 'play') return;
+    const dt = Math.max(0, Math.min((t - last) / 1000, 0.05));
+    last = t;
+    update(dt);
+    if (state === 'play') render();
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- update ----------
+  function update(dt) {
+    const paceDir = (keys.up ? 1 : 0) - (keys.down ? 1 : 0);
+    if (paceDir) pace += paceDir * 0.8 * dt;
+    if (drag && drag.moved) pace = drag.pace0 - (drag.curY - drag.y0) / (H * 0.4) * (PACE_MAX - PACE_MIN);
+    pace = Math.max(PACE_MIN, Math.min(PACE_MAX, pace));
+    speed = (1500 + Math.min(dist * 4, 2200)) * pace;
+    score += speed * dt / UNITS_PER_M * scoreMult(pace);
+    position += speed * dt;
+    dist = position / UNITS_PER_M;
+    step += dt * speed / 330;
+    const pz = PZ(), pseg = segAt(pz);
+
+    // steering; bends pull the walker toward the outside, like a car in OutRun
+    const dir = (keys.left ? -1 : 0) + (keys.right ? 1 : 0);
+    playerX += dir * 1.9 * dt;
+    if (drag) {
+      const target = drag.px + (drag.cur - drag.x0) / (W * 0.36);
+      const diff = target - playerX;
+      playerX += Math.sign(diff) * Math.min(Math.abs(diff), 3 * dt);
+    }
+    playerX -= dt * pseg.curve * (speed / 4000) * 0.38;
+    const lim = pseg.w - 0.1;
+    playerX = Math.max(-lim, Math.min(lim, playerX));
+    skyOffset -= pseg.curve * (speed / 4000) * dt * 70; // background swings opposite to the bend
+    skyOffset *= 1 - dt * 0.25;
+
+    updatePlace();
+    if (plate) { plate.life -= dt; if (plate.life <= 0) plate = null; }
+
+    // spawning
+    spawnT -= dt;
+    if (spawnT <= 0) {
+      spawnPoop(position + DRAW * SEG_LEN * 0.8);
+      if (dist > 150 && Math.random() < 0.3) spawnPoop(position + DRAW * SEG_LEN * 0.8 + 300);
+      spawnT = Math.max(0.28, 0.9 - dist / 900) * (0.6 + Math.random() * 0.8);
+    }
+    dogT -= dt;
+    if (dogT <= 0) { spawnDog(); dogT = Math.max(2.2, 6 - dist / 250) * (0.7 + Math.random() * 0.6); }
+    if (dist > 50) {
+      peeT -= dt;
+      if (peeT <= 0) { spawnPeer(); peeT = Math.max(4.5, 9 - dist / 150) * (0.7 + Math.random() * 0.6); }
+    }
+    // hugging one edge for too long brings a passer-by right there, just ahead
+    const atEdge = Math.abs(playerX) > lim - 0.15 ? Math.sign(playerX) : 0;
+    if (atEdge && atEdge === edgeSide) edgeT += dt;
+    else { edgeSide = atEdge; edgeT = 0; }
+    if (dist > 30 && edgeSide && edgeT > 2.5 && spawnPeer(edgeSide)) edgeT = -1.5;
+    if (dist > 80) {
+      cleanT -= dt;
+      if (cleanT <= 0) { spawnCleaner(); cleanT = 16 + Math.random() * 12; }
+    }
+    for (const tr of trucks) { tr.z += tr.v * dt; tr.t += dt; }
+    // dawdling below 80% pace for a while makes the pigeons gather: up to 3× as many
+    if (pace < 0.8) slowT += dt; else slowT = Math.max(0, slowT - dt * 2);
+    const flock = slowT > 2 ? 1 + Math.min((slowT - 2) / 3, 1) * 2 : 1;
+    if (flock > 1 && !slowWarned) { slowWarned = true; texts.push({ text: '비둘기들이 노려봅니다…', life: 1.6, dy: 0, small: true }); }
+    if (slowT === 0) slowWarned = false;
+    if (dist > 40 || flock > 1) {
+      birdT -= dt * flock;
+      if (birdT <= 0) { spawnBird(); birdT = Math.max(1.8, 5.5 - dist / 300) * (0.7 + Math.random() * 0.6); }
+    }
+
+    // crossings: cars keep coming in both lanes while the crossing is in view
+    for (const c of crossings) {
+      if (c.z1 < position || c.z0 - position > DRAW * SEG_LEN) continue;
+      if (!c.primed) {
+        c.primed = true;
+        for (let lane = 0; lane < 2; lane++) {
+          if (Math.random() < 0.5) c.cars.push(makeCar(lane, (Math.random() * 2 - 1) * 5));
+          c.spawn[lane] = Math.random() * 3;
+        }
+      }
+      for (let lane = 0; lane < 2; lane++) {
+        c.spawn[lane] -= dt;
+        if (c.spawn[lane] <= 0) { c.cars.push(makeCar(lane)); c.spawn[lane] = nextCarGap(); }
+      }
+      for (const car of c.cars) car.x += car.dir * car.v * dt;
+      c.cars = c.cars.filter(car => Math.abs(car.x) < 7);
+    }
+    crossings = crossings.filter(c => c.z1 > position);
+
+    if (jumpT > 0) jumpT = Math.max(0, jumpT - dt);
+    if (jumpCd > 0) jumpCd = Math.max(0, jumpCd - dt);
+    for (const p of poops) {
+      p.steam += dt * 3; p.age += dt;
+      if (p.flyNear && p.z - pz < p.flyNear) p.flyAt = Math.min(p.flyAt, p.age);
+      if (p.age > p.flyAt) p.flies = Math.min(1, p.flies + dt / 0.7);    }
+    for (const d of dogs) {
+      d.t += dt;
+      if (d.state === 'sniff') {
+        d.sniffT -= dt;
+        if (d.sniffT <= 0) d.state = 'walk';
+      } else {
+        d.x += d.dir * d.v * dt;
+        if (d.kind === 'zigzag') d.z += Math.sin(d.t * 3.4) * 500 * dt;
+        if (d.kind === 'diagonal') d.z += d.zv * dt;
+        d.leg += dt * (6 + d.v * 8);
+      }
+      if (!d.dropped && (d.dir > 0 ? d.x >= d.dropAt : d.x <= d.dropAt)) {
+        d.dropped = true;
+        spawnPoop(d.z, d.x - d.dir * 0.12 * d.size, true);
+        if (d.kind === 'sniff') { d.state = 'sniff'; d.sniffT = 1 + Math.random() * 1.2; }
+        if (d.kind === 'turnback') d.dir = -d.dir;
+      }
+    }
+    for (const s of peers) {
+      s.t += dt;
+      if (!s.done && s.t >= s.T) {
+        s.done = true;
+        const seg = segAt(s.z);
+        poops.push({ z: s.z, x: s.side * (seg.w - 0.15), r: 0.2, kind: 'pee', rot: s.bob, age: 0, flies: 0, flyAt: Infinity, flyNear: 0, steam: 0 });
+        texts.push({ text: 'Pardon~', life: 1, at: s, small: true });
+      }
+      if (s.done) { s.leave += dt; s.z += 350 * dt; }
+    }
+    for (const b of birds) {
+      b.x += b.vx * dt; b.flap += dt * 16;
+      if (!b.dropped && ((b.vx > 0 && b.x >= b.dropAt) || (b.vx < 0 && b.x <= b.dropAt))) { b.dropped = true; dropFromBird(b); }
+    }
+    for (const t of texts) { t.life -= dt; t.dy -= 30 * dt; }
+    if (flash) { flash.t -= dt; if (flash.t <= 0) flash = null; }
+    if (invuln > 0) invuln -= dt;
+    if (shake > 0) shake -= dt;
+
+    // bird droppings land when their timer runs out
+    for (let i = drops.length - 1; i >= 0; i--) {
+      const d = drops[i];
+      d.t += dt;
+      if (d.t < d.T) continue;
+      drops.splice(i, 1);
+      if (invuln <= 0 && Math.abs(d.x - playerX) < d.r + 0.05 && Math.abs(d.z - pz) < 600) {
+        if (takeHit('새똥 명중!', 'rgba(244,242,234,0.6)')) return;
+      } else stains.push({ z: d.z, x: d.x, seed: Math.random() * 10 });
+    }
+
+    // collisions with things on the pavement
+    const reach = 60 + speed * dt;
+    if (invuln <= 0 && !airborne()) { // a jump clears poop, fly swarms and puddles
+      for (const p of poops) {
+        if (Math.abs(p.z - pz) > reach) continue;
+        if (Math.abs(p.x - playerX) < hitRadius(p) + 0.07) {
+          poops.splice(poops.indexOf(p), 1);
+          const label = p.kind === 'pee' ? '첨벙! 오줌이잖아!' : p.flies > 0.5 ? '윙윙~ 파리 떼!' : '으악, 밟았다!';
+          if (takeHit(label, p.kind === 'pee' ? 'rgba(232,200,74,0.45)' : 'rgba(107,68,35,0.45)')) return;
+          break;
+        }
+      }
+    }
+    // café terrace tables against the wall
+    if (invuln <= 0) {
+      const pi = Math.floor(pz / SEG_LEN);
+      for (let i = pi - 1; i <= pi + 1; i++) {
+        const s = segs[i];
+        if (!s || !s.terrace || i % 2) continue;
+        if (Math.abs(terraceZ(s) - pz) > reach + 60) continue;
+        if (Math.abs(playerX - terraceX(s)) < TERRACE_HALF + 0.06) {
+          if (takeHit('Attention! 테라스!', 'rgba(140,42,42,0.35)')) return;
+          break;
+        }
+      }
+    }
+    // the street cleaner's spray along the curb
+    if (invuln <= 0) {
+      for (const tr of trucks) {
+        if (Math.abs(tr.z - pz) < SPRAY_LEN && playerX < -pseg.w + SPRAY_REACH) {
+          if (takeHit('살수차 물벼락!', 'rgba(111,160,200,0.45)')) return;
+          break;
+        }
+      }
+    }
+    if (invuln <= 0) {
+      outer: for (const c of crossings) {
+        for (const car of c.cars) {
+          if (Math.abs(c.lanes[car.lane] - pz) > 260) continue;
+          if (Math.abs(car.x - playerX) < car.len / 2 + 0.06) {
+            if (takeHit('빵빵! 차 조심!', 'rgba(200,55,45,0.4)')) return;
+            break outer;
+          }
+        }
+      }
+    }
+
+    // cleanup: anything behind the camera is gone
+    poops = poops.filter(p => p.z > position + 100);
+    stains = stains.filter(s => s.z > position + 100);
+    dogs = dogs.filter(d => d.z > position + 100 && Math.abs(d.x) < 2.6);
+    peers = peers.filter(s => s.z > position + 100 && s.leave < 2.5);
+    trucks = trucks.filter(tr => tr.z > position - SPRAY_LEN && tr.z < position + DRAW * SEG_LEN);
+    birds = birds.filter(b => b.x > -60 && b.x < W + 60);
+    texts = texts.filter(t => t.life > 0);
+
+    const shown = Math.floor(dist);
+    if (shown !== update.lastShown) { update.lastShown = shown; updateHud(); }
+  }
+
+  // ---------- rendering ----------
+  let rows = [], camX = 0, baseIdx = 0;
+  const FLY_REACH = 0.2;
+  const hitRadius = p => p.r + p.flies * FLY_REACH;
+
+  function poly(color, pts) {
+    ctx.fillStyle = color; ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath(); ctx.fill();
+  }
+  function proj(xacc, z) {
+    const s = CAM_DEPTH / z;
+    return { s, x: W / 2 + s * (xacc - camX) * K2, y: HORIZON + s * CAM_H * K };
+  }
+  // world (z, lateral road units) → screen; k = pixels per world unit
+  function toScreen(z, xr, h = 0) {
+    const zr = z - position;
+    if (zr < PLAYER_Z * 0.6) return null; // already behind the walker
+    const n = Math.floor(z / SEG_LEN) - baseIdx;
+    if (n < 0 || n >= rows.length) return null;
+    const row = rows[n], f = (z - row.zs) / SEG_LEN;
+    const xacc = row.x1 + (row.x2 - row.x1) * f;
+    const s = CAM_DEPTH / zr;
+    return { x: W / 2 + s * (xacc + xr * ROAD_W - camX) * K2, y: HORIZON + s * (CAM_H - h) * K, k: s * K2, flat: Math.min(0.55, CAM_H / zr * 0.5) };
+  }
+
+  function render() {
+    ctx.save();
+    if (shake > 0) ctx.translate((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
+    drawSky();
+
+    ctx.fillStyle = ASPHALT; ctx.fillRect(-10, HORIZON, W + 20, H - HORIZON + 10);
+
+    baseIdx = Math.floor(position / SEG_LEN);
+    genMore(baseIdx + DRAW + 2);
+    camX = playerX * ROAD_W * 0.7;
+    const basePct = (position % SEG_LEN) / SEG_LEN;
+    let x = 0, dx = -(segs[baseIdx].curve * basePct);
+    rows = [];
+    for (let n = 0; n < DRAW; n++) {
+      const i = baseIdx + n, seg = segs[i];
+      const zs = i * SEG_LEN;
+      const a = proj(x, Math.max(zs - position, 40)), b = proj(x + dx, zs + SEG_LEN - position);
+      a.w = a.s * ROAD_W * seg.w * K2; b.w = b.s * ROAD_W * seg.w * K2;
+      rows.push({ seg, a, b, zs, x1: x, x2: x + dx });
+      x += dx; dx += seg.curve;
+    }
+
+    // bucket everything drawn on the street by segment, then paint far → near
+    const buckets = new Map();
+    const add = (z, fn) => {
+      const n = Math.floor(z / SEG_LEN) - baseIdx;
+      if (n < 0 || n >= DRAW) return;
+      if (!buckets.has(n)) buckets.set(n, []);
+      buckets.get(n).push({ z, fn });
+    };
+    for (const row of rows) {
+      const s = row.seg, zc = row.zs + SEG_LEN * 0.5;
+      if (s.tree) add(zc, () => drawTree(toScreen(zc, -s.w * 1.13)));
+      if (s.lamp) add(zc + 1, () => drawLamp(toScreen(zc + 1, -s.w * 1.06)));
+      if (s.morris) add(zc + 2, () => drawMorris(toScreen(zc + 2, -s.w * 1.2)));
+      if (s.terrace && s.i % 2 === 0) add(terraceZ(s), () => drawTerrace(toScreen(terraceZ(s), terraceX(s)), s.i));
+    }
+    for (const tr of trucks) add(tr.z, () => drawCleaner(tr));
+    for (const st of stains) add(st.z, () => drawStain(toScreen(st.z, st.x), st.seed));
+    for (const p of poops) add(p.z, () => drawPoop(toScreen(p.z, p.x), p));
+    for (const d of drops) add(d.z, () => drawTarget(toScreen(d.z, d.x), d));
+    for (const d of dogs) add(d.z, () => drawDog(toScreen(d.z, d.x), d));
+    for (const s of peers) add(s.z, () => drawPeer(s));
+    for (const c of crossings) for (const car of c.cars) add(c.lanes[car.lane], () => drawCar(toScreen(c.lanes[car.lane], car.x), car));
+
+    for (let n = DRAW - 1; n >= 0; n--) {
+      drawSegment(rows[n]);
+      const list = buckets.get(n);
+      if (list) { list.sort((p, q) => q.z - p.z); for (const it of list) it.fn(); }
+    }
+
+    drawPlayer();
+
+    // falling droppings, from the pigeon down to their ground target
+    for (const d of drops) {
+      const tgt = toScreen(d.z, d.x);
+      if (!tgt) continue;
+      const k = Math.min(d.t / d.T, 1);
+      const fx = d.sx + (tgt.x - d.sx) * k, fy = d.sy + (tgt.y - d.sy) * k * k;
+      ctx.fillStyle = '#f4f2ea'; ctx.strokeStyle = 'rgba(60,60,60,0.5)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.ellipse(fx, fy, 3 + k * 3, 4.5 + k * 4, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    for (const b of birds) drawBird(b);
+
+    ctx.textAlign = 'center';
+    for (const t of texts) {
+      let tx = playerScreen.x, ty = playerScreen.y - playerScreen.h * 1.1 - 22 + t.dy; // above the cooldown bar
+      if (t.at) { const p = toScreen(t.at.z, t.at.x, 700); if (!p) continue; tx = p.x; ty = p.y + t.dy; }
+      ctx.globalAlpha = Math.max(0, Math.min(1, t.life));
+      ctx.font = (t.small ? '14px' : '22px') + ' "Black Han Sans", "Malgun Gothic", sans-serif';
+      ctx.lineWidth = 4; ctx.strokeStyle = '#1b1e24'; ctx.strokeText(t.text, tx, ty);
+      ctx.fillStyle = t.small ? '#ffffff' : '#f2d27a'; ctx.fillText(t.text, tx, ty);
+      ctx.globalAlpha = 1;
+    }
+    if (plate) drawPlate();
+    if (state === 'play' || state === 'paused') drawPaceGauge();
+    if (state === 'paused') {
+      ctx.fillStyle = 'rgba(27,30,36,0.55)'; ctx.fillRect(-10, -10, W + 20, H + 20);
+      ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff';
+      ctx.font = '34px "Black Han Sans", "Malgun Gothic", sans-serif';
+      ctx.fillText('일시 정지', W / 2, H * 0.45);
+      ctx.font = '15px "Gowun Dodum", "Malgun Gothic", sans-serif';
+      ctx.fillText('P 또는 ▶ 버튼으로 계속 걷기', W / 2, H * 0.45 + 30);
+    }
+    if (flash) { ctx.fillStyle = flash.color; ctx.globalAlpha = flash.t / 0.35; ctx.fillRect(-10, -10, W + 20, H + 20); ctx.globalAlpha = 1; }
+    ctx.restore();
+  }
+
+  function drawSegment(row) {
+    const { seg, a, b } = row;
+    if (b.y >= a.y || a.y < HORIZON) return;
+    // point on this segment: f = 0 near … 1 far, u = lateral (±1 sidewalk edge), h = height
+    const P = (f, u, h = 0) => {
+      const s = a.s + (b.s - a.s) * f, w = a.w + (b.w - a.w) * f;
+      return [a.x + (b.x - a.x) * f + w * u, a.y + (b.y - a.y) * f - s * h * K];
+    };
+    const quad = (color, f0, f1, u0, u1, h0 = 0, h1 = h0) =>
+      poly(color, [P(f0, u0, h0), P(f1, u0, h0 === h1 ? h0 : h0), P(f1, u1, h1), P(f0, u1, h1)]);
+    const wallQ = (color, f0, f1, u, h0, h1) => poly(color, [P(f0, u, h0), P(f1, u, h0), P(f1, u, h1), P(f0, u, h1)]);
+
+    // lane dashes on the street to the left give a sense of speed
+    if (seg.i % 4 < 2) quad('rgba(235,232,220,0.55)', 0, 1, -2.35, -2.25);
+
+    if (seg.crossing) {
+      // zebra stripes run along the walking direction; curb lips at both ends
+      if (seg.ck >= 1 && seg.ck <= 3) for (let j = 0; j < 7; j++) { const u0 = -0.93 + j * 0.27; quad('#ecebe4', 0, 1, u0, u0 + 0.15); }
+      if (seg.ck === 2) for (const side of [-1, 1]) for (let u = 1.3; u < 7; u += 0.9) quad('rgba(235,232,220,0.6)', 0.42, 0.58, side * u, side * (u + 0.45));
+      if (seg.ck === 0) quad('#9d968b', 0.8, 1, -1, 1);
+      if (seg.ck === 4) quad('#9d968b', 0, 0.2, -1, 1);
+      return;
+    }
+    quad('#6f8aa3', 0, 1, -1.1, -1.06);                                   // gutter water
+    quad('#9d968b', 0, 1, -1.06, -1);                                     // curb
+    quad(Math.floor(seg.i / 2) % 2 ? '#cfc6b8' : '#c5bbac', 0, 1, -1, 1); // sidewalk slabs
+    // wet strip along the curb where a street cleaner is spraying
+    for (const tr of trucks) {
+      const f0 = Math.max(0, (tr.z - SPRAY_LEN - row.zs) / SEG_LEN), f1 = Math.min(1, (tr.z + SPRAY_LEN - row.zs) / SEG_LEN);
+      if (f1 > f0) quad('rgba(90,120,150,0.4)', f0, f1, -1.06, -1 + SPRAY_REACH / seg.w);
+    }
+    quad('rgba(120,108,92,0.35)', 0, 1, -0.34, -0.33);
+    quad('rgba(120,108,92,0.35)', 0, 1, 0.33, 0.34);
+    quad('#a59b8c', 0, 1, 1, 1.04);                                       // foot of the wall
+
+    // Haussmann facade: stone wall, shopfront, iron balconies, windows, zinc mansard roof
+    const stones = ['#e8dcc4', '#e2d3b8', '#ece2cf', '#dccdb2'];
+    wallQ(stones[seg.bld % 4], 0, 1, 1.04, 0, WALL_H);
+    if (seg.shop) {
+      wallQ('#3d4752', 0.12, 0.88, 1.04, 60, 640);
+      wallQ(['#1d3b6e', '#8c2a2a', '#2f5d46'][seg.bld % 3], 0, 1, 1.04, 680, 860);
+    } else {
+      wallQ('#5d4a3a', 0.3, 0.7, 1.04, 0, 700);
+    }
+    for (const fh of [1150, 1650, 2150]) wallQ('#5f6f80', 0.3, 0.7, 1.04, fh, fh + 360);
+    wallQ('#2a2c30', 0, 1, 1.04, 1100, 1140);
+    wallQ('#2a2c30', 0, 1, 1.04, 2100, 2140);
+    if (seg.i % 7 === 0) wallQ('rgba(80,70,60,0.35)', 0, 0.06, 1.04, 0, WALL_H);
+    poly('#6f7d8c', [P(0, 1.04, WALL_H), P(1, 1.04, WALL_H), P(1, 1.13, ROOF_H), P(0, 1.13, ROOF_H)]);
+    // café awning reaching out over the terrace, red and cream stripes
+    if (seg.terrace) poly(seg.i % 2 ? '#e9dfc9' : '#9b2f2b', [P(0, 1.04, 1050), P(1, 1.04, 1050), P(1, 0.66, 860), P(0, 0.66, 860)]);
+    if (seg.i % 7 === 3) poly('#8a6a55', [P(0.3, 1.1, ROOF_H - 50), P(0.7, 1.1, ROOF_H - 50), P(0.7, 1.1, ROOF_H + 260), P(0.3, 1.1, ROOF_H + 260)]);
+  }
+
+  // ---------- sky and landmarks ----------
+  const ROOFS = Array.from({ length: 48 }, (_, i) => ({ w: 26 + ((i * 37) % 40), h: 10 + ((i * 53) % 26), chim: i % 3 }));
+  function drawSky() {
+    const g = ctx.createLinearGradient(0, 0, 0, HORIZON);
+    g.addColorStop(0, '#8fb0cf'); g.addColorStop(1, '#e4e6e1');
+    ctx.fillStyle = g; ctx.fillRect(-10, -10, W + 20, HORIZON + 10);
+    // soft clouds drift with the bends
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    for (let i = 0; i < 5; i++) {
+      const cx = ((i * 211 + skyOffset * 0.3) % (W + 200) + W + 200) % (W + 200) - 100, cy = HORIZON * (0.15 + (i % 3) * 0.12);
+      ctx.beginPath(); ctx.ellipse(cx, cy, 46, 12, 0, 0, Math.PI * 2); ctx.ellipse(cx + 26, cy - 7, 28, 11, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    // the landmark for this stretch grows as you approach and cross-fades to the next
+    const i = placeAt(dist), prog = (dist % PLACE_LEN) / PLACE_LEN;
+    const cx = W * 0.5 + Math.max(-W * 0.4, Math.min(W * 0.4, skyOffset));
+    const h = H * 0.3 * (0.75 + 0.45 * prog);
+    const fade = prog > 0.88 ? (prog - 0.88) / 0.12 : 0;
+    ctx.globalAlpha = 1 - fade; PLACES[i].draw(cx, HORIZON + 4, h);
+    if (fade > 0) { ctx.globalAlpha = fade; PLACES[(i + 1) % PLACES.length].draw(cx, HORIZON + 4, H * 0.3 * 0.75); }
+    ctx.globalAlpha = 1;
+    // distant zinc rooftops with chimney pots, parallax with the bends
+    let x = ((skyOffset * 0.6) % 1600 + 1600) % 1600 - 1600;
+    let j = 0;
+    while (x < W + 40) {
+      const r = ROOFS[j % ROOFS.length];
+      ctx.fillStyle = '#9aa6b3'; ctx.fillRect(x, HORIZON - r.h, r.w, r.h + 2);
+      ctx.fillStyle = '#8693a1'; ctx.fillRect(x, HORIZON - r.h, r.w, 4);
+      if (r.chim) { ctx.fillStyle = '#a07f6c'; ctx.fillRect(x + r.w * 0.3, HORIZON - r.h - 6, 4, 6); ctx.fillRect(x + r.w * 0.65, HORIZON - r.h - 5, 4, 5); }
+      x += r.w; j++;
+    }
+  }
+
+  function drawEiffel(cx, by, h) {
+    ctx.save(); ctx.translate(cx, by);
+    ctx.fillStyle = '#6e5b4d';
+    ctx.beginPath();
+    ctx.moveTo(-0.3 * h, 0);
+    ctx.quadraticCurveTo(-0.16 * h, -0.14 * h, -0.11 * h, -0.3 * h);
+    ctx.quadraticCurveTo(-0.07 * h, -0.45 * h, -0.05 * h, -0.55 * h);
+    ctx.lineTo(-0.018 * h, -0.9 * h); ctx.lineTo(-0.006 * h, -h); ctx.lineTo(0.006 * h, -h); ctx.lineTo(0.018 * h, -0.9 * h);
+    ctx.lineTo(0.05 * h, -0.55 * h);
+    ctx.quadraticCurveTo(0.07 * h, -0.45 * h, 0.11 * h, -0.3 * h);
+    ctx.quadraticCurveTo(0.16 * h, -0.14 * h, 0.3 * h, 0);
+    ctx.lineTo(0.19 * h, 0);
+    ctx.quadraticCurveTo(0.1 * h, -0.2 * h, 0, -0.2 * h);
+    ctx.quadraticCurveTo(-0.1 * h, -0.2 * h, -0.19 * h, 0);
+    ctx.closePath(); ctx.fill();
+    ctx.fillRect(-0.15 * h, -0.31 * h, 0.3 * h, 0.03 * h);
+    ctx.fillRect(-0.075 * h, -0.56 * h, 0.15 * h, 0.022 * h);
+    ctx.fillRect(-0.03 * h, -0.91 * h, 0.06 * h, 0.018 * h);
+    ctx.strokeStyle = 'rgba(230,220,200,0.35)'; ctx.lineWidth = 1;
+    for (let k = 0; k < 6; k++) {
+      const y0 = -0.32 * h - k * 0.04 * h, y1 = y0 - 0.04 * h, w0 = 0.1 * h - k * 0.009 * h, w1 = w0 - 0.009 * h;
+      ctx.beginPath(); ctx.moveTo(-w0, y0); ctx.lineTo(w1, y1); ctx.moveTo(w0, y0); ctx.lineTo(-w1, y1); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function drawArc(cx, by, h) {
+    ctx.save(); ctx.translate(cx, by);
+    const w = 0.9 * h;
+    ctx.fillStyle = '#c9bea6';
+    ctx.beginPath();
+    ctx.moveTo(-w / 2, 0); ctx.lineTo(-w / 2, -h); ctx.lineTo(w / 2, -h); ctx.lineTo(w / 2, 0);
+    ctx.lineTo(0.17 * h, 0); ctx.lineTo(0.17 * h, -0.48 * h);
+    ctx.arc(0, -0.48 * h, 0.17 * h, 0, Math.PI, true);
+    ctx.lineTo(-0.17 * h, 0); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#b3a78e';
+    ctx.fillRect(-w / 2, -h, w, 0.05 * h);
+    ctx.fillRect(-w / 2, -0.8 * h, w, 0.03 * h);
+    ctx.fillRect(-w / 2 - 0.02 * h, -0.86 * h, w + 0.04 * h, 0.03 * h);
+    ctx.fillRect(-w / 2 + 0.05 * h, -0.55 * h, 0.12 * h, 0.2 * h);
+    ctx.fillRect(w / 2 - 0.17 * h, -0.55 * h, 0.12 * h, 0.2 * h);
+    // tricolour hanging in the arch
+    const fw = 0.1 * h, fh = 0.16 * h;
+    [['#1d3b6e', -1.5], ['#f4f2ea', -0.5], ['#c8372d', 0.5]].forEach(([c, o]) => { ctx.fillStyle = c; ctx.fillRect(o * fw / 1.5, -0.6 * h, fw / 1.5, fh); });
+    ctx.restore();
+  }
+  function drawLouvre(cx, by, h) {
+    ctx.save(); ctx.translate(cx, by);
+    const pw = 1.7 * h * 0.55;
+    ctx.fillStyle = '#d8ccb3'; ctx.fillRect(-2.2 * h, -0.42 * h, 4.4 * h, 0.42 * h);
+    ctx.fillStyle = '#7f8b99';
+    ctx.fillRect(-2.2 * h, -0.5 * h, 4.4 * h, 0.08 * h);
+    for (const px of [-1.9, -0.9, 0.9, 1.9]) ctx.fillRect((px - 0.18) * h, -0.62 * h, 0.36 * h, 0.2 * h);
+    ctx.fillStyle = '#9c917c';
+    for (let x = -2.1; x < 2.2; x += 0.16) { ctx.fillRect(x * h, -0.34 * h, 0.06 * h, 0.1 * h); ctx.fillRect(x * h, -0.18 * h, 0.06 * h, 0.1 * h); }
+    ctx.fillStyle = 'rgba(169,195,214,0.95)';
+    ctx.beginPath(); ctx.moveTo(-pw, 0); ctx.lineTo(0, -0.6 * h); ctx.lineTo(pw, 0); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(80,100,120,0.6)'; ctx.lineWidth = 1;
+    for (let k = 1; k < 7; k++) {
+      const t = k / 7;
+      ctx.beginPath(); ctx.moveTo(-pw * (1 - t), -0.6 * h * t); ctx.lineTo(pw * (1 - t), -0.6 * h * t); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-pw + 2 * pw * t, 0); ctx.lineTo(0, -0.6 * h); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function drawNotreDame(cx, by, h) {
+    ctx.save(); ctx.translate(cx, by);
+    const w = 0.8 * h;
+    ctx.fillStyle = '#a99c84'; ctx.fillRect(-0.012 * h, -1.25 * h, 0.024 * h, 0.6 * h);
+    ctx.fillStyle = '#c4b89f';
+    ctx.fillRect(-w / 2, -0.7 * h, w, 0.7 * h);
+    ctx.fillRect(-w / 2, -h, 0.3 * w, 0.32 * h);
+    ctx.fillRect(w / 2 - 0.3 * w, -h, 0.3 * w, 0.32 * h);
+    ctx.fillStyle = '#7d715d';
+    ctx.beginPath(); ctx.arc(0, -0.5 * h, 0.11 * h, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#a7b8c9';
+    ctx.beginPath(); ctx.arc(0, -0.5 * h, 0.075 * h, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#7d715d';
+    for (const px of [-0.28, 0, 0.28]) {
+      ctx.beginPath(); ctx.moveTo((px - 0.08) * h, 0); ctx.lineTo((px - 0.08) * h, -0.16 * h);
+      ctx.quadraticCurveTo(px * h, -0.28 * h, (px + 0.08) * h, -0.16 * h); ctx.lineTo((px + 0.08) * h, 0); ctx.closePath(); ctx.fill();
+    }
+    ctx.fillRect(-w / 2, -0.7 * h, w, 0.025 * h);
+    for (let x = -w / 2 + 0.04 * h; x < w / 2 - 0.03 * h; x += 0.06 * h) ctx.fillRect(x, -0.66 * h, 0.025 * h, 0.06 * h);
+    for (const side of [-1, 1]) for (let k = 0; k < 2; k++) ctx.fillRect(side * w * 0.35 - 0.02 * h + k * 0.06 * h * side, -0.95 * h, 0.03 * h, 0.17 * h);
+    ctx.restore();
+  }
+  function drawSacreCoeur(cx, by, h) {
+    ctx.save(); ctx.translate(cx, by);
+    ctx.fillStyle = '#7f9a6e';
+    ctx.beginPath(); ctx.moveTo(-1.4 * h, 0); ctx.quadraticCurveTo(0, -0.62 * h, 1.4 * h, 0); ctx.closePath(); ctx.fill();
+    ctx.save(); ctx.translate(0, -0.3 * h);
+    ctx.fillStyle = '#f2efe6';
+    ctx.fillRect(-0.42 * h, -0.28 * h, 0.84 * h, 0.3 * h);
+    ctx.beginPath(); ctx.ellipse(0, -0.28 * h, 0.2 * h, 0.3 * h, 0, Math.PI, 0); ctx.fill();
+    ctx.fillRect(-0.2 * h, -0.36 * h, 0.4 * h, 0.08 * h);
+    ctx.fillRect(-0.025 * h, -0.66 * h, 0.05 * h, 0.1 * h);
+    ctx.beginPath(); ctx.ellipse(0, -0.66 * h, 0.04 * h, 0.06 * h, 0, Math.PI, 0); ctx.fill();
+    for (const side of [-1, 1]) {
+      ctx.fillRect(side * 0.31 * h - 0.06 * h, -0.4 * h, 0.12 * h, 0.12 * h);
+      ctx.beginPath(); ctx.ellipse(side * 0.31 * h, -0.4 * h, 0.06 * h, 0.1 * h, 0, Math.PI, 0); ctx.fill();
+    }
+    ctx.fillRect(0.5 * h, -0.62 * h, 0.1 * h, 0.64 * h);
+    ctx.beginPath(); ctx.moveTo(0.5 * h, -0.62 * h); ctx.lineTo(0.55 * h, -0.74 * h); ctx.lineTo(0.6 * h, -0.62 * h); ctx.fill();
+    ctx.fillStyle = 'rgba(150,160,170,0.5)';
+    for (const px of [-0.3, -0.1, 0.1, 0.3]) ctx.fillRect(px * h - 0.02 * h, -0.22 * h, 0.04 * h, 0.1 * h);
+    ctx.restore();
+    ctx.restore();
+  }
+
+  // ---------- street furniture ----------
+  function drawTree(p) {
+    if (!p) return;
+    const k = p.k;
+    ctx.fillStyle = '#5b5e63'; ctx.fillRect(p.x - 160 * k, p.y - 14 * k, 320 * k, 28 * k);
+    ctx.fillStyle = '#7a6a58'; ctx.fillRect(p.x - 30 * k, p.y - 1300 * k, 60 * k, 1300 * k);
+    ctx.fillStyle = '#5f7f4e';
+    ctx.beginPath(); ctx.arc(p.x, p.y - 1650 * k, 520 * k, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#6f9159';
+    ctx.beginPath(); ctx.arc(p.x - 200 * k, p.y - 1800 * k, 320 * k, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x + 220 * k, p.y - 1550 * k, 300 * k, 0, Math.PI * 2); ctx.fill();
+  }
+  function drawLamp(p) {
+    if (!p) return;
+    const k = p.k;
+    ctx.fillStyle = '#25382f';
+    ctx.fillRect(p.x - 18 * k, p.y - 1500 * k, 36 * k, 1500 * k);
+    ctx.fillRect(p.x - 45 * k, p.y - 120 * k, 90 * k, 120 * k);
+    ctx.beginPath(); ctx.moveTo(p.x - 70 * k, p.y - 1500 * k); ctx.lineTo(p.x + 70 * k, p.y - 1500 * k); ctx.lineTo(p.x + 45 * k, p.y - 1720 * k); ctx.lineTo(p.x - 45 * k, p.y - 1720 * k); ctx.fill();
+    ctx.fillStyle = '#f2e3a6'; ctx.fillRect(p.x - 40 * k, p.y - 1690 * k, 80 * k, 160 * k);
+  }
+  function drawMorris(p) {
+    if (!p) return;
+    const k = p.k;
+    ctx.fillStyle = '#2f5d46'; ctx.fillRect(p.x - 170 * k, p.y - 1200 * k, 340 * k, 1200 * k);
+    ctx.fillStyle = '#e8d9b8'; ctx.fillRect(p.x - 150 * k, p.y - 1050 * k, 300 * k, 750 * k);
+    ctx.fillStyle = '#c8372d'; ctx.fillRect(p.x - 120 * k, p.y - 1000 * k, 110 * k, 300 * k);
+    ctx.fillStyle = '#1d3b6e'; ctx.fillRect(p.x + 10 * k, p.y - 800 * k, 110 * k, 380 * k);
+    ctx.fillStyle = '#2f5d46';
+    ctx.beginPath(); ctx.ellipse(p.x, p.y - 1200 * k, 200 * k, 160 * k, 0, Math.PI, 0); ctx.fill();
+  }
+
+  // ---------- hazards ----------
+  function drawStain(p, seed) {
+    if (!p) return;
+    const r = 55 * p.k;
+    ctx.fillStyle = '#f4f2ea';
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, r, r * p.flat, 0, 0, Math.PI * 2); ctx.fill();
+    for (let i = 0; i < 4; i++) {
+      const a = seed + i * 1.7;
+      ctx.beginPath(); ctx.ellipse(p.x + Math.cos(a) * r * 1.4, p.y + Math.sin(a) * r * p.flat * 1.4, r * 0.3, r * 0.3 * p.flat, 0, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  function drawPuddle(p, rr, seed) {
+    if (!p) return;
+    const r = rr * ROAD_W * p.k, f = p.flat;
+    const lobes = [[0, 0, 1, 1], [0.5, 0.25, 0.6, 0.7], [-0.55, 0.15, 0.55, 0.65], [0.15, -0.35, 0.5, 0.55]];
+    ctx.fillStyle = 'rgba(176,138,30,0.35)';
+    for (const [ox, oy, rx, ry] of lobes) { ctx.beginPath(); ctx.ellipse(p.x + ox * r, p.y + oy * r * f, rx * r + 1.5, ry * r * f + 1.5, 0, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = 'rgba(232,200,74,0.62)';
+    for (const [ox, oy, rx, ry] of lobes) { ctx.beginPath(); ctx.ellipse(p.x + ox * r, p.y + oy * r * f, rx * r, ry * r * f, 0, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = 'rgba(255,255,240,0.5)';
+    ctx.beginPath(); ctx.ellipse(p.x - r * 0.3, p.y - r * f * 0.2, r * 0.3, r * f * 0.12, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  function drawPoop(p, o) {
+    if (!p) return;
+    if (o.kind === 'pee') return drawPuddle(p, o.r, o.rot);
+    const R = o.r * ROAD_W * p.k;
+    if (o.flies > 0) {
+      const HR = hitRadius(o) * ROAD_W * p.k;
+      ctx.fillStyle = `rgba(40,40,30,${0.12 * o.flies})`;
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, HR, HR * p.flat, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = `rgba(40,40,30,${0.4 * o.flies})`; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, HR, HR * p.flat, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, R * 1.15, R * 1.15 * p.flat, 0, 0, Math.PI * 2); ctx.fill();
+    const base = o.fresh ? '#5a361a' : '#6b4423';
+    const tiers = [[0, 1, 0.5], [-0.42, 0.75, 0.42], [-0.78, 0.45, 0.36]];
+    for (const [dy, rx, ry] of tiers) {
+      ctx.fillStyle = base;
+      ctx.beginPath(); ctx.ellipse(p.x, p.y - R * 0.3 + dy * R, rx * R, ry * R, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,220,180,0.2)';
+      ctx.beginPath(); ctx.ellipse(p.x - rx * R * 0.3, p.y - R * 0.3 + dy * R - ry * R * 0.3, rx * R * 0.35, ry * R * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    if (o.fresh && !reduceMotion && R > 3) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = Math.max(1, R * 0.08);
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        for (let k = 0; k < 10; k++) {
+          const yy = p.y - R * 1.3 - k * R * 0.18, xx = p.x + i * R * 0.4 + Math.sin(o.steam + k * 0.6 + i) * R * 0.2;
+          k ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy);
+        }
+        ctx.stroke();
+      }
+    }
+    if (o.flies > 0) {
+      const HR = hitRadius(o) * ROAD_W * p.k, arrive = 1 - o.flies, fs = Math.max(1.2, R * 0.16);
+      for (let i = 0; i < 6; i++) {
+        const a = (reduceMotion ? 0 : o.steam * (1.4 + (i % 3) * 0.5)) + i * Math.PI / 3;
+        const rr = HR * (0.5 + 0.45 * Math.abs(Math.sin(a * 1.7 + i))) + arrive * 80;
+        const fx = p.x + Math.cos(a) * rr, fy = p.y - R * (0.8 + (i % 3) * 0.5) + Math.sin(a) * rr * p.flat;
+        ctx.fillStyle = 'rgba(220,230,240,0.8)';
+        ctx.beginPath(); ctx.ellipse(fx - fs * 0.8, fy - fs * 0.8, fs * 1.1, fs * 0.55, 0.6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(fx + fs * 0.8, fy - fs * 0.8, fs * 1.1, fs * 0.55, -0.6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#1b1e24';
+        ctx.beginPath(); ctx.arc(fx, fy, fs, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+  function drawTarget(p, d) {
+    if (!p) return;
+    const k = Math.min(d.t / d.T, 1), R = d.r * ROAD_W * p.k;
+    ctx.fillStyle = `rgba(0,0,0,${0.08 + k * 0.22})`;
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, R * (0.35 + k * 0.6), R * (0.35 + k * 0.6) * p.flat, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = `rgba(200,55,45,${0.4 + k * 0.5})`; ctx.lineWidth = 2; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, R, R * p.flat, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  }
+  // dog seen from the side, trotting across the sidewalk
+  function drawDog(p, d) {
+    if (!p) return;
+    const L = 300 * d.size * p.k;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.scale(d.dir, 1);
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath(); ctx.ellipse(0, 0, L * 0.6, L * 0.6 * p.flat, 0, 0, Math.PI * 2); ctx.fill();
+    const sniff = d.state === 'sniff', sw = sniff ? 0 : Math.sin(d.leg) * L * 0.1;
+    ctx.strokeStyle = d.color; ctx.lineWidth = Math.max(1.5, L * 0.08); ctx.lineCap = 'round';
+    for (const [lx, s] of [[-0.3, sw], [-0.22, -sw], [0.28, -sw], [0.36, sw]]) {
+      ctx.beginPath(); ctx.moveTo(lx * L, -0.38 * L); ctx.lineTo(lx * L + s, 0); ctx.stroke();
+    }
+    ctx.fillStyle = d.color;
+    ctx.beginPath(); ctx.ellipse(0, -0.48 * L, 0.45 * L, 0.17 * L, 0, 0, Math.PI * 2); ctx.fill();
+    const hy = sniff ? -0.3 * L : -0.68 * L;
+    ctx.beginPath(); ctx.ellipse(0.5 * L, hy, 0.16 * L, 0.13 * L, sniff ? 0.6 : -0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0.64 * L, hy + 0.04 * L, 0.09 * L, 0.06 * L, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.ellipse(0.44 * L, hy - 0.06 * L, 0.06 * L, 0.11 * L, 0.4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1b1e24';
+    ctx.beginPath(); ctx.arc(0.72 * L, hy + 0.03 * L, Math.max(1, 0.03 * L), 0, Math.PI * 2); ctx.fill();
+    const wag = sniff ? Math.sin(d.t * 25) * 0.12 * L : Math.sin(d.leg * 1.5) * 0.06 * L;
+    ctx.strokeStyle = d.color; ctx.lineWidth = Math.max(1.2, L * 0.05);
+    ctx.beginPath(); ctx.moveTo(-0.42 * L, -0.55 * L); ctx.lineTo(-0.6 * L, -0.75 * L + wag); ctx.stroke();
+    ctx.restore();
+  }
+  // bistro table with a coffee cup and two rattan chairs
+  function drawTerrace(p, seed) {
+    if (!p) return;
+    const k = p.k, cw = 0.13 * ROAD_W * k;
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, TERRACE_HALF * ROAD_W * k, TERRACE_HALF * ROAD_W * k * p.flat, 0, 0, Math.PI * 2); ctx.fill();
+    for (const side of [-1, 1]) {
+      const cx = p.x + side * cw;
+      ctx.fillStyle = '#7a5532';
+      ctx.fillRect(cx - 40 * k, p.y - 450 * k, 80 * k, 450 * k);
+      ctx.fillStyle = '#a77b4f';
+      ctx.fillRect(cx - 70 * k, p.y - 470 * k, 140 * k, 40 * k);
+      ctx.fillStyle = seed % 4 === 0 ? '#2f5d46' : '#9b2f2b';
+      ctx.fillRect(cx - side * 70 * k - (side > 0 ? 0 : 0), p.y - 860 * k, 20 * k, 400 * k);
+      ctx.fillStyle = '#c99d6a';
+      ctx.beginPath(); ctx.ellipse(cx - side * 60 * k, p.y - 880 * k, 25 * k, 25 * k, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = '#3a3a3a';
+    ctx.fillRect(p.x - 18 * k, p.y - 680 * k, 36 * k, 680 * k);
+    ctx.fillRect(p.x - 90 * k, p.y - 20 * k, 180 * k, 20 * k);
+    ctx.fillStyle = '#efece4';
+    ctx.beginPath(); ctx.ellipse(p.x, p.y - 690 * k, 170 * k, 45 * k, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(p.x + 30 * k, p.y - 760 * k, 45 * k, 60 * k);
+    ctx.fillStyle = '#5b3a24';
+    ctx.fillRect(p.x + 33 * k, p.y - 760 * k, 39 * k, 10 * k);
+  }
+
+  // green Paris street-cleaning truck seen from behind, hosing the sidewalk edge
+  function drawCleaner(tr) {
+    const p = toScreen(tr.z, -1.75);
+    if (!p) return;
+    const k = p.k, w = 0.85 * ROAD_W * k, h = 1050 * k;
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, w * 0.6, w * 0.6 * p.flat, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1b1e24';
+    ctx.fillRect(p.x - w * 0.45, p.y - 160 * k, w * 0.18, 160 * k);
+    ctx.fillRect(p.x + w * 0.27, p.y - 160 * k, w * 0.18, 160 * k);
+    ctx.fillStyle = '#2e7d4f';
+    ctx.fillRect(p.x - w / 2, p.y - h, w, h - 130 * k);
+    ctx.fillStyle = '#3c9a63';
+    ctx.beginPath(); ctx.ellipse(p.x, p.y - h * 0.62, w * 0.36, h * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e9eef5';
+    ctx.fillRect(p.x - w * 0.42, p.y - h * 0.25, w * 0.84, h * 0.08);
+    ctx.fillStyle = '#c8372d';
+    ctx.fillRect(p.x - w * 0.46, p.y - h * 0.22, w * 0.08, h * 0.06);
+    ctx.fillRect(p.x + w * 0.38, p.y - h * 0.22, w * 0.08, h * 0.06);
+    ctx.fillStyle = '#f2a33a';
+    ctx.beginPath(); ctx.arc(p.x, p.y - h - 20 * k, 40 * k, Math.PI, 0); ctx.fill();
+    if (w > 8) {
+      ctx.fillStyle = '#1d3b6e'; ctx.textAlign = 'center';
+      ctx.font = `${Math.max(6, w * 0.09)}px "IBM Plex Mono", Consolas, monospace`;
+      ctx.fillText('PROPRETÉ DE PARIS', p.x, p.y - h * 0.185);
+    }
+    // water jets arcing onto the sidewalk edge
+    const seg = segAt(tr.z);
+    ctx.strokeStyle = 'rgba(200,225,245,0.75)'; ctx.lineWidth = Math.max(1, 30 * k); ctx.lineCap = 'round';
+    for (let j = 0; j < 5; j++) {
+      const dz = (j - 2) * SPRAY_LEN * 0.4, wob = reduceMotion ? 0 : Math.sin(tr.t * 9 + j) * 0.05;
+      const g = toScreen(tr.z + dz, -seg.w + SPRAY_REACH * (0.35 + 0.15 * (j % 3)) + wob);
+      if (!g) continue;
+      const sx = p.x + w * 0.5, sy = p.y - 330 * k;
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo((sx + g.x) / 2, Math.min(sy, g.y) - 60 * k, g.x, g.y); ctx.stroke();
+    }
+  }
+
+  // passer-by facing the wall (or the curb): stream, growing puddle, then walks away
+  function drawPeer(s) {
+    const p = toScreen(s.z, s.x);
+    if (!p) return;
+    if (!s.done) drawPuddle(toScreen(s.z, s.side * (segAt(s.z).w - 0.15)), 0.2 * (0.25 + 0.75 * Math.min(s.t / s.T, 1)), s.bob);
+    const Hh = 560 * p.k, face = s.side;
+    ctx.save(); ctx.translate(p.x, p.y);
+    if (s.done) ctx.globalAlpha = Math.max(0, 1 - s.leave / 2.5);
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath(); ctx.ellipse(0, 0, Hh * 0.22, Hh * 0.22 * p.flat, 0, 0, Math.PI * 2); ctx.fill();
+    const walk = s.done ? Math.sin(s.leave * 10) * Hh * 0.04 : 0;
+    ctx.fillStyle = '#2d3748';
+    ctx.fillRect(-Hh * 0.08 + walk, -Hh * 0.42, Hh * 0.07, Hh * 0.42);
+    ctx.fillRect(Hh * 0.01 - walk, -Hh * 0.42, Hh * 0.07, Hh * 0.42);
+    ctx.fillStyle = s.coat;
+    ctx.beginPath(); ctx.moveTo(-Hh * 0.13, -Hh * 0.82); ctx.lineTo(Hh * 0.13, -Hh * 0.82); ctx.lineTo(Hh * 0.16, -Hh * 0.38); ctx.lineTo(-Hh * 0.16, -Hh * 0.38); ctx.closePath(); ctx.fill();
+    if (!s.done) ctx.fillRect(face > 0 ? Hh * 0.08 : -Hh * 0.2, -Hh * 0.62, Hh * 0.12, Hh * 0.06);
+    ctx.fillStyle = '#e8b98f';
+    ctx.beginPath(); ctx.arc(face * Hh * 0.02, -Hh * 0.9, Hh * 0.08, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#8c2a2a';
+    ctx.beginPath(); ctx.ellipse(face * Hh * 0.01, -Hh * 0.96, Hh * 0.09, Hh * 0.04, 0, 0, Math.PI * 2); ctx.fill();
+    if (!s.done) {
+      const wob = reduceMotion ? 0 : Math.sin(s.t * 25 + s.bob) * Hh * 0.01;
+      ctx.strokeStyle = 'rgba(232,200,74,0.9)'; ctx.lineWidth = Math.max(1, Hh * 0.012);
+      ctx.beginPath(); ctx.moveTo(face * Hh * 0.12, -Hh * 0.45);
+      ctx.quadraticCurveTo(face * Hh * 0.3, -Hh * 0.4 + wob, face * Hh * 0.32, -Hh * 0.02); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // car crossing the zebra crossing, seen from the side
+  function drawCar(p, car) {
+    if (!p) return;
+    const L = car.len * ROAD_W * p.k;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.scale(car.dir, 1);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath(); ctx.ellipse(0, 0, L * 0.55, L * 0.55 * p.flat * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = car.color;
+    ctx.beginPath(); ctx.roundRect(-L / 2, -0.3 * L, L, 0.2 * L, L * 0.05); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-0.3 * L, -0.3 * L); ctx.lineTo(-0.2 * L, -0.47 * L); ctx.lineTo(0.18 * L, -0.47 * L); ctx.lineTo(0.3 * L, -0.3 * L); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(160,190,210,0.9)';
+    ctx.beginPath(); ctx.moveTo(-0.26 * L, -0.31 * L); ctx.lineTo(-0.18 * L, -0.44 * L); ctx.lineTo(-0.02 * L, -0.44 * L); ctx.lineTo(-0.02 * L, -0.31 * L); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0.02 * L, -0.31 * L); ctx.lineTo(0.02 * L, -0.44 * L); ctx.lineTo(0.16 * L, -0.44 * L); ctx.lineTo(0.26 * L, -0.31 * L); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#1b1e24';
+    for (const wx of [-0.3, 0.3]) { ctx.beginPath(); ctx.arc(wx * L, -0.1 * L, 0.09 * L, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = '#9a9ea6';
+    for (const wx of [-0.3, 0.3]) { ctx.beginPath(); ctx.arc(wx * L, -0.1 * L, 0.04 * L, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = '#f7e7a0'; ctx.fillRect(0.47 * L, -0.26 * L, 0.03 * L, 0.05 * L);
+    ctx.restore();
+  }
+  function drawBird(b) {
+    const dir = Math.sign(b.vx), s = Math.max(0.8, H / 600);
+    ctx.save(); ctx.translate(b.x, b.y); ctx.scale(dir * s, s);
+    const w = reduceMotion ? 0 : Math.sin(b.flap) * 10;
+    ctx.fillStyle = '#7f8794';
+    ctx.beginPath(); ctx.moveTo(-4, -2); ctx.lineTo(4, -2); ctx.lineTo(-2, -12 - w); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#9aa2ad';
+    ctx.beginPath(); ctx.ellipse(0, 0, 11, 5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4f7a6a'; ctx.beginPath(); ctx.arc(10, -2, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#c88a5a'; ctx.beginPath(); ctx.moveTo(13, -2.5); ctx.lineTo(17, -1.5); ctx.lineTo(13, -0.5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#5c6b74'; ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(-17, -3); ctx.lineTo(-17, 3); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#7f8794';
+    ctx.beginPath(); ctx.moveTo(-4, 1); ctx.lineTo(4, 1); ctx.lineTo(-1, 10 + w * 0.6); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  // the walker, seen from behind
+  let playerScreen = { x: 0, y: 0, h: 0 };
+  function drawPlayer() {
+    const k0 = K2 / CAM_H;
+    const x = W / 2 + (playerX * ROAD_W - camX) * k0, gy = HORIZON + K;
+    const Hh = 520 * k0;
+    const air = jumpHeight();                       // 0 on the ground … 1 at the top of a jump
+    const y = gy - air * Hh * 0.38;
+    playerScreen = { x, y, h: Hh };
+    drawJumpCooldown(x, y - Hh * 1.1);
+    if (invuln > 0 && Math.floor(invuln * 10) % 2 === 0) return;
+    const sw = air > 0 ? 0 : Math.sin(step) * Hh * 0.05;
+    ctx.fillStyle = `rgba(0,0,0,${0.22 - air * 0.1})`;
+    ctx.beginPath(); ctx.ellipse(x, gy, Hh * 0.2 * (1 - air * 0.35), Hh * 0.05 * (1 - air * 0.35), 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#2d3138';
+    ctx.fillRect(x - Hh * 0.1, y - Hh * 0.38 - sw, Hh * 0.08, Hh * 0.36);
+    ctx.fillRect(x + Hh * 0.02, y - Hh * 0.38 + sw, Hh * 0.08, Hh * 0.36);
+    ctx.fillStyle = '#3a2416';
+    ctx.beginPath(); ctx.ellipse(x - Hh * 0.06, y - Hh * 0.02 - sw, Hh * 0.055, Hh * 0.03, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x + Hh * 0.06, y - Hh * 0.02 + sw, Hh * 0.055, Hh * 0.03, 0, 0, Math.PI * 2); ctx.fill();
+    const muddy = 3 - lives;
+    if (muddy) {
+      ctx.fillStyle = '#6b4423';
+      for (let i = 0; i < muddy; i++) { ctx.beginPath(); ctx.arc(x + (i % 2 ? 1 : -1) * Hh * 0.06, y - Hh * 0.03, Hh * 0.025, 0, Math.PI * 2); ctx.fill(); }
+    }
+    // trench coat with belt, swinging arms
+    ctx.fillStyle = '#b8955f';
+    ctx.beginPath(); ctx.moveTo(x - Hh * 0.15, y - Hh * 0.8); ctx.lineTo(x + Hh * 0.15, y - Hh * 0.8); ctx.lineTo(x + Hh * 0.18, y - Hh * 0.34); ctx.lineTo(x - Hh * 0.18, y - Hh * 0.34); ctx.closePath(); ctx.fill();
+    ctx.fillRect(x - Hh * 0.22, y - Hh * 0.78 + sw, Hh * 0.07, Hh * 0.3);
+    ctx.fillRect(x + Hh * 0.15, y - Hh * 0.78 - sw, Hh * 0.07, Hh * 0.3);
+    ctx.fillStyle = '#9c7c4b'; ctx.fillRect(x - Hh * 0.16, y - Hh * 0.56, Hh * 0.32, Hh * 0.03);
+    ctx.fillRect(x - Hh * 0.005, y - Hh * 0.53, Hh * 0.01, Hh * 0.19);
+    // scarf, head, beret
+    ctx.fillStyle = '#c8372d';
+    ctx.fillRect(x - Hh * 0.09, y - Hh * 0.83, Hh * 0.18, Hh * 0.05);
+    ctx.fillRect(x + Hh * 0.03, y - Hh * 0.8, Hh * 0.05, Hh * 0.14);
+    ctx.fillStyle = '#3b2a20';
+    ctx.beginPath(); ctx.arc(x, y - Hh * 0.9, Hh * 0.085, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1b1e24';
+    ctx.beginPath(); ctx.ellipse(x, y - Hh * 0.97, Hh * 0.1, Hh * 0.045, -0.15, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(x - Hh * 0.008, y - Hh * 1.03, Hh * 0.016, Hh * 0.03);
+  }
+
+  // jump cooldown: a small bar floating over the walker's head while it recharges
+  function drawJumpCooldown(cx, cy) {
+    if (jumpCd <= 0 || state === 'idle') return;
+    const w = 54, h = 7, t = 1 - jumpCd / JUMP_COOLDOWN;
+    ctx.fillStyle = 'rgba(27,30,36,0.75)';
+    ctx.beginPath(); ctx.roundRect(cx - w / 2 - 3, cy - h - 3, w + 6, h + 6, 4); ctx.fill();
+    ctx.fillStyle = 'rgba(233,228,218,0.2)'; ctx.fillRect(cx - w / 2, cy - h, w, h);
+    ctx.fillStyle = t > 0.85 ? '#7fb069' : '#6fa0c8'; ctx.fillRect(cx - w / 2, cy - h, w * t, h);
+  }
+
+  // blue street-plate announcing the landmark of this stretch
+  function drawPlate() {
+    const a = Math.min(1, plate.life / 0.4, (2.6 - plate.life) / 0.3);
+    ctx.globalAlpha = Math.max(0, a);
+    ctx.font = '20px "Black Han Sans", "Malgun Gothic", sans-serif';
+    const tw = Math.max(ctx.measureText(plate.text).width, 60) + 36;
+    const x = W / 2 - tw / 2, y = 16;
+    ctx.fillStyle = '#1d3b6e'; ctx.strokeStyle = '#e9eef5'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.roundRect(x, y, tw, 54, 6); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center';
+    ctx.fillText(plate.text, W / 2, y + 26);
+    ctx.font = '13px "Gowun Dodum", "Malgun Gothic", sans-serif';
+    ctx.fillText(plate.ko, W / 2, y + 45);
+    ctx.globalAlpha = 1;
+  }
+
+  // pace gauge in the bottom-left corner, like OutRun's speedometer
+  function drawPaceGauge() {
+    const x = 12, y = H - 22, w = Math.min(160, Math.max(140, W * 0.36)), h = 10;
+    const t = (pace - PACE_MIN) / (PACE_MAX - PACE_MIN);
+    const kmh = speed / UNITS_PER_M * 3.6; // forward speed actually being walked
+    ctx.fillStyle = 'rgba(27,30,36,0.72)';
+    ctx.beginPath(); ctx.roundRect(x - 6, y - 46, w + 12, h + 54, 6); ctx.fill();
+    ctx.textAlign = 'left'; ctx.fillStyle = '#f2d27a';
+    ctx.font = '600 22px "IBM Plex Mono", Consolas, monospace';
+    ctx.fillText(kmh.toFixed(1), x, y - 22);
+    const numW = ctx.measureText(kmh.toFixed(1)).width;
+    ctx.font = '12px "IBM Plex Mono", Consolas, monospace'; ctx.fillStyle = '#e9e4da';
+    ctx.fillText('km/h', x + numW + 5, y - 22);
+    ctx.fillText(t < 0.3 ? '느긋하게' : t > 0.7 ? '서둘러서' : '보통 걸음', x, y - 6);
+    ctx.textAlign = 'right'; ctx.fillText(Math.round(pace * 100) + '%', x + w, y - 6);
+    // score multiplier for the current pace
+    const m = scoreMult(pace);
+    ctx.font = '600 16px "IBM Plex Mono", Consolas, monospace';
+    ctx.fillStyle = m >= 1.5 ? '#e07a5f' : m >= 1 ? '#f2d27a' : '#9fb0a0';
+    ctx.fillText('×' + m.toFixed(1), x + w, y - 22);
+    for (let i = 0; i < 10; i++) {
+      const on = (i + 0.5) / 10 <= t;
+      ctx.fillStyle = on ? (i < 3 ? '#7fb069' : i < 7 ? '#f2d27a' : '#e07a5f') : 'rgba(233,228,218,0.18)';
+      ctx.fillRect(x + i * (w / 10), y + 2, w / 10 - 2, h);
+    }
+  }
+
+  // ---------- input ----------
+  const keyMap = {
+    ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right',
+    ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down'
+  };
+  addEventListener('keydown', e => {
+    if ((e.key === 'p' || e.key === 'P' || e.key === 'Escape') && (state === 'play' || state === 'paused')) { e.preventDefault(); if (!e.repeat) togglePause(); return; }
+    if (state === 'paused') return;
+    if (e.key === ' ' && state === 'play') { e.preventDefault(); if (!e.repeat) jump(); return; }
+    if (keyMap[e.key]) { keys[keyMap[e.key]] = true; drag = null; e.preventDefault(); }
+    if ((e.key === ' ' || e.key === 'Enter') && state !== 'play' && document.activeElement?.tagName !== 'BUTTON') { e.preventDefault(); start(); }
+  });
+  addEventListener('keyup', e => { if (keyMap[e.key]) keys[keyMap[e.key]] = false; });
+  canvas.addEventListener('pointerdown', e => {
+    drag = { x0: e.clientX, cur: e.clientX, px: playerX, y0: e.clientY, curY: e.clientY, pace0: pace, moved: false, t0: performance.now() };
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!drag) return;
+    drag.cur = e.clientX; drag.curY = e.clientY;
+    if (Math.abs(drag.curY - drag.y0) > 12) drag.moved = true; // vertical drag sets the pace
+  });
+  canvas.addEventListener('pointerup', e => {
+    // a quick tap without dragging is a jump (for phones)
+    if (drag && !drag.moved && Math.abs(e.clientX - drag.x0) < 10 && performance.now() - drag.t0 < 250) jump();
+    drag = null;
+  });
+  canvas.addEventListener('pointercancel', () => { drag = null; });
+
+  $('startBtn').addEventListener('click', start);
+  $('retryBtn').addEventListener('click', start);
+  addEventListener('resize', resize);
+  document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play') togglePause(); });
+  $('pauseBtn').addEventListener('mousedown', e => e.preventDefault()); // keep focus off so Space isn't doubled
+  $('pauseBtn').addEventListener('click', togglePause);
+
+  // idle scene: the first stretch toward the Eiffel Tower with every hazard on show
+  reset();
+  resize();
+  {
+    const pz = PZ();
+    spawnPoop(pz + 2600, -0.35); poops[poops.length - 1].flies = 1;
+    spawnPoop(pz + 6000, 0.4, true);
+    spawnPoop(pz + 9500, -0.1);
+    dogs.push({ z: pz + 4300, x: 0.15, dir: -1, kind: 'trot', size: 1, v: 0.7, zv: 0, t: 0, state: 'walk', sniffT: 0, leg: 1, dropAt: -2, dropped: true, color: '#b98a4e' });
+    peers.push({ z: pz + 7500, side: 1, x: 0.9, t: 1, T: 2, done: false, leave: 0, bob: 1, coat: '#4a5568' });
+    for (let i = 52; i < 57; i++) segAt(i * SEG_LEN).terrace = true; // a café terrace further up
+    trucks.push({ z: pz + 5800, v: 0, t: 0 });
+    poops.push({ z: pz + 5200, x: -0.85, r: 0.2, kind: 'pee', rot: 2, age: 0, flies: 0, flyAt: Infinity, flyNear: 0, steam: 0 });
+    drops.push({ sx: W * 0.62, sy: HORIZON * 0.4, z: pz + 1500, x: 0.2, t: 0.45, T: 1, r: 0.2 });
+    birds.push({ x: W * 0.62, y: HORIZON * 0.4, vx: 160, dropAt: 0, dropped: true, flap: 1 });
+  }
+  render();
+})();
+</script>
+</body>
+</html>
