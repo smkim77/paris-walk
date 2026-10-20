@@ -715,7 +715,7 @@
   // Oncoming ones are a bit slower, since our own walking already adds to how fast they pass.
   function spawnCyclist() {
     const toward = Math.random() < 0.4, far = position + (DRAW - 6) * SEG_LEN, r = Math.random();
-    const base = r < 0.35 ? 900 + Math.random() * 1300 : r < 0.8 ? 2400 + Math.random() * 1600 : 4400 + Math.random() * 2000;
+    const base = r < 0.35 ? 900 + Math.random() * 1300 : r < 0.8 ? 2400 + Math.random() * 1600 : 3900 + Math.random() * 1300;
     const v = toward ? -base * 0.75 : base, z = toward || v < speed ? far : position - 300, seg = segAt(z);
     if (seg.flipX) return;
     cyclists.push({ z, v, side: seg.side, lane: toward ? 1.95 : 1.45, toward,
