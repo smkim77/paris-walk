@@ -722,16 +722,17 @@
   const RIDER_HEADS = ['#3a2a1e', '#1b1e24', '#c9a066', '#7a4a2a', 'helmet', 'beret'];
   function makeCar(lane, dir, x) {
     // about a third of the crossing traffic is bikes: slower and narrower, but just as painful
-    if (Math.random() < 0.33) return { lane, dir, bike: true, x: x ?? -dir * 6, v: 1.6 + Math.random() * 0.6 + Math.min(dist * 0.001, 0.4), len: 0.65, color: pick(BIKE_COLORS), coat: pick(RIDER_COATS), head: pick(RIDER_HEADS), ph: Math.random() * 6 };
+    if (Math.random() < 0.33) return { lane, dir, bike: true, x: x ?? -dir * 6, v: 1.7 + Math.random() * 0.7 + Math.min(dist * 0.002, 0.8), len: 0.65, color: pick(BIKE_COLORS), coat: pick(RIDER_COATS), head: pick(RIDER_HEADS), ph: Math.random() * 6 };
     return { lane, dir, x: x ?? -dir * 6, v: 2.8 + Math.random() * 1.2 + Math.min(dist * 0.004, 1.5), len: 1.9 + Math.random() * 0.4, color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)] };
   }
   // a cyclist on the street to the left: the near lane rides our way, the far lane comes toward us.
   // Riders vary: leisurely (the walker overtakes them), everyday, and the odd one in a hurry.
-  // Oncoming ones are a bit slower, since our own walking already adds to how fast they pass.
+  // Oncoming ones are a bit slower, since our own walking already adds to how fast they pass; the
+  // ones riding alongside us are slower still (at most about 2500), so they drift past gently.
   function spawnCyclist() {
     const toward = Math.random() < 0.4, far = position + (DRAW - 6) * SEG_LEN, r = Math.random();
     const base = r < 0.35 ? 900 + Math.random() * 1300 : r < 0.8 ? 2000 + Math.random() * 1200 : 3000 + Math.random() * 800;
-    const v = toward ? -base * 0.75 : base, z = toward || v < speed ? far : position - 300, seg = segAt(z);
+    const v = toward ? -base * 0.75 : base * 0.65, z = toward || v < speed ? far : position - 300, seg = segAt(z);
     if (seg.flipX) return;
     cyclists.push({ z, v, side: seg.side, lane: toward ? 1.95 : 1.45, toward,
       ph: Math.random() * 6, color: pick(BIKE_COLORS), coat: pick(RIDER_COATS), head: pick(RIDER_HEADS), basket: Math.random() < 0.35 });
