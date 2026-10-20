@@ -261,6 +261,7 @@
   let state = 'idle';
   let position = 0, speed = 1500, dist = 0, lives = 3, invuln = 0, playerX = 0, step = 0, skyOffset = 0, shake = 0, flash = null;
   let poops = [], dogs = [], peers = [], birds = [], drops = [], stains = [], texts = [], trucks = [];
+  let cyclists = [], cycT = 0; // bikes riding the street beside the sidewalk: scenery only
   let edgeT = 0, edgeSide = 0, cleanT = 0; // how long the walker has hugged one edge; street-cleaner timer
   // pace: the walker's own speed setting, from a slow stroll (0.6×) to a hurry (1.4×)
   const PACE_MIN = 0.6, PACE_MAX = 1.4;
@@ -327,6 +328,27 @@
           tone({ f0: f, dur: d ? 0.22 : 0.17, type: 'sawtooth', gain: 0.09, attack: 0.008, delay: d });
           tone({ f0: f * 2, dur: d ? 0.22 : 0.17, type: 'square', gain: 0.025, attack: 0.008, delay: d });
         }
+      },
+      // bumped a cyclist: a bump, then a grumbling voice (a gruff, falling "oh la la..." mutter)
+      grumble() {
+        noise({ dur: 0.15, gain: 0.3, freq: 700, freq1: 200 });
+        const t0 = ac.currentTime + 0.1, o = track(ac.createOscillator()), rough = track(ac.createOscillator()), rd = ac.createGain();
+        const f1 = ac.createBiquadFilter(), f2 = ac.createBiquadFilter(), g = ac.createGain();
+        o.type = 'sawtooth'; rough.frequency.value = 31; rd.gain.value = 7; rough.connect(rd).connect(o.frequency); // a bit of growl
+        f1.type = f2.type = 'bandpass'; f1.Q.value = 5; f2.Q.value = 7;
+        o.connect(f1); o.connect(f2); f1.connect(g); f2.connect(g); g.connect(master);
+        g.gain.setValueAtTime(0, t0);
+        const base = 115 + Math.random() * 35, n = 4 + Math.floor(Math.random() * 2);
+        let t = t0;
+        for (let k = 0; k < n; k++) {
+          const [a, b] = VOWELS[[3, 0, 5, 4, 1][Math.floor(Math.random() * 5)]], dur = k === n - 1 ? 0.34 : 0.1 + Math.random() * 0.1;
+          o.frequency.setTargetAtTime(base * (1.2 - 0.45 * k / n) * (0.94 + Math.random() * 0.12), t, 0.03);
+          f1.frequency.setTargetAtTime(a, t, 0.02); f2.frequency.setTargetAtTime(b, t, 0.02);
+          g.gain.setTargetAtTime(2.2, t, 0.015); g.gain.setTargetAtTime(0.2, t + dur * 0.75, 0.025);
+          t += dur;
+        }
+        g.gain.setTargetAtTime(0, t, 0.04);
+        o.start(t0); rough.start(t0); o.stop(t + 0.3); rough.stop(t + 0.3);
       },
       crash() { noise({ dur: 0.22, gain: 0.4, freq: 1800, freq1: 400 }); for (const [f, d] of [[1250, 0], [1720, 0.04], [2150, 0.09]]) tone({ f0: f, dur: 0.5, type: 'triangle', gain: 0.1, delay: d }); },
       spray() { noise({ dur: 0.6, gain: 0.25, freq: 900, freq1: 3500, filter: 'bandpass', q: 0.7, attack: 0.03 }); },
@@ -529,6 +551,7 @@
     resetTrack();
     position = 0; speed = 1500; pace = 1; jumpT = 0; jumpCd = 0; dist = 0; lives = 3; invuln = 0; playerX = 0; step = 0; skyOffset = 0; shake = 0; flash = null;
     poops = []; dogs = []; peers = []; birds = []; drops = []; stains = []; texts = []; trucks = [];
+    cyclists = []; cycT = 0;
     edgeT = 0; edgeSide = 0; cleanT = 14; score = 0; slowT = 0; slowWarned = false; runMs = 0;
     spawnT = 0.3; dogT = 2.5; birdT = 5; peeT = 3; shownPlace = -1; plate = null;
     updateHud(); updatePlace();
@@ -641,9 +664,22 @@
     if (r < 0.85) return 2.5 + Math.random() * 3.5;
     return 6 + Math.random() * 4;
   }
+  const pick = list => list[Math.floor(Math.random() * list.length)];
+  const BIKE_COLORS = ['#8fc4a4', '#3f6fb0', '#c8372d', '#2a2c30', '#d9a441'];   // the mint one is a Vélib'
+  const RIDER_COATS = ['#2f5d46', '#1d3b6e', '#8c2a2a', '#d9a441', '#4a4f57', '#e8e4d8', '#7a5a8c'];
+  const RIDER_HEADS = ['#3a2a1e', '#1b1e24', '#c9a066', '#7a4a2a', 'helmet', 'beret'];
   function makeCar(lane, x) {
     const dir = lane === 0 ? 1 : -1;
+    // about a third of the crossing traffic is bikes: slower and narrower, but just as painful
+    if (Math.random() < 0.33) return { lane, dir, bike: true, x: x ?? -dir * 6, v: 1.7 + Math.random() * 0.7 + Math.min(dist * 0.002, 0.8), len: 0.65, color: pick(BIKE_COLORS), coat: pick(RIDER_COATS), head: pick(RIDER_HEADS), ph: Math.random() * 6 };
     return { lane, dir, x: x ?? -dir * 6, v: 2.8 + Math.random() * 1.2 + Math.min(dist * 0.004, 1.5), len: 1.9 + Math.random() * 0.4, color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)] };
+  }
+  // a cyclist on the street to the left: the near lane rides our way (and usually overtakes), the far lane comes toward us
+  function spawnCyclist() {
+    const toward = Math.random() < 0.4, far = position + (DRAW - 6) * SEG_LEN;
+    const v = toward ? -(2500 + Math.random() * 2000) : 3800 + Math.random() * 2600;
+    cyclists.push({ z: toward || v < speed ? far : position - 300, v, lane: toward ? 1.95 : 1.45, toward,
+      ph: Math.random() * 6, color: pick(BIKE_COLORS), coat: pick(RIDER_COATS), head: pick(RIDER_HEADS), basket: Math.random() < 0.35 });
   }
 
   // ambience volumes from what is near the walker (closer = louder, 0 when out of earshot)
@@ -657,6 +693,7 @@
       flies = Math.max(flies, Math.sin(Math.PI * p.flies) * near(Math.hypot(p.z - pz, (p.x - playerX) * ROAD_W), 7500));
     }
     for (const c of crossings) for (const cr of c.cars) {
+      if (cr.bike) continue;
       const dx = (cr.x - playerX) * ROAD_W, v = near(Math.hypot(c.lanes[cr.lane] - pz, dx), 5000);
       if (v > car) { car = v; carPan = Math.max(-1, Math.min(1, dx / 2500)); }
     }
@@ -814,10 +851,14 @@
         c.spawn[lane] -= dt;
         if (c.spawn[lane] <= 0) { c.cars.push(makeCar(lane)); c.spawn[lane] = nextCarGap(); }
       }
-      for (const car of c.cars) car.x += car.dir * car.v * dt;
+      for (const car of c.cars) { car.x += car.dir * car.v * dt; if (car.bike) car.ph += car.v * dt * 4; }
       c.cars = c.cars.filter(car => Math.abs(car.x) < 7);
     }
     crossings = crossings.filter(c => c.z1 > position);
+
+    cycT -= dt;
+    if (cycT <= 0) { spawnCyclist(); cycT = 1.2 + Math.random() * 3.5; }
+    for (const c of cyclists) { c.z += c.v * dt; c.ph += Math.abs(c.v) * dt / 380; }
 
     if (jumpT > 0) jumpT = Math.max(0, jumpT - dt);
     if (jumpCd > 0) jumpCd = Math.max(0, jumpCd - dt);
@@ -914,7 +955,8 @@
         for (const car of c.cars) {
           if (Math.abs(c.lanes[car.lane] - pz) > 260) continue;
           if (Math.abs(car.x - playerX) < car.len / 2 + 0.06) {
-            if (takeHit('빵빵! 차 조심!', 'rgba(200,55,45,0.4)', 'honk')) return;
+            if (car.bike ? takeHit('Oh là là! 자전거 조심!', 'rgba(200,120,45,0.4)', 'grumble')
+                         : takeHit('빵빵! 차 조심!', 'rgba(200,55,45,0.4)', 'honk')) return;
             break outer;
           }
         }
@@ -927,6 +969,7 @@
     dogs = dogs.filter(d => d.z > position + 100 && Math.abs(d.x) < 2.6);
     peers = peers.filter(s => s.z > position + 100 && s.leave < 2.5);
     trucks = trucks.filter(tr => tr.z > position - SPRAY_LEN && tr.z < position + DRAW * SEG_LEN);
+    cyclists = cyclists.filter(c => c.z > position - 400 && c.z < position + DRAW * SEG_LEN);
     birds = birds.filter(b => b.x > -60 && b.x < W + 60);
     texts = texts.filter(t => t.life > 0);
 
@@ -1005,7 +1048,8 @@
     for (const d of drops) add(d.z, () => drawTarget(toScreen(d.z, d.x), d));
     for (const d of dogs) add(d.z, () => drawDog(toScreen(d.z, d.x), d));
     for (const s of peers) add(s.z, () => drawPeer(s));
-    for (const c of crossings) for (const car of c.cars) add(c.lanes[car.lane], () => drawCar(toScreen(c.lanes[car.lane], car.x), car));
+    for (const c of crossings) for (const car of c.cars) add(c.lanes[car.lane], () => (car.bike ? drawBike : drawCar)(toScreen(c.lanes[car.lane], car.x), car));
+    for (const c of cyclists) add(c.z, () => drawCyclist(c));
 
     for (let n = DRAW - 1; n >= 0; n--) {
       drawSegment(rows[n]);
@@ -1577,6 +1621,67 @@
     ctx.fillStyle = '#9a9ea6';
     for (const wx of [-0.3, 0.3]) { ctx.beginPath(); ctx.arc(wx * L, -0.1 * L, 0.04 * L, 0, Math.PI * 2); ctx.fill(); }
     ctx.fillStyle = '#f7e7a0'; ctx.fillRect(0.47 * L, -0.26 * L, 0.03 * L, 0.05 * L);
+    ctx.restore();
+  }
+  // rider's head: hair, a helmet or a beret (from behind there is no face)
+  function drawRiderHead(x, y, r, head, face) {
+    ctx.fillStyle = '#e8b98f';
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    if (head === 'helmet') { ctx.fillStyle = '#e8e4d8'; ctx.beginPath(); ctx.ellipse(x, y - r * 0.3, r * 1.15, r * 0.85, 0, Math.PI, 0); ctx.fill(); }
+    else if (head === 'beret') { ctx.fillStyle = '#1b1e24'; ctx.beginPath(); ctx.ellipse(x + r * 0.2, y - r * 0.75, r * 1.1, r * 0.45, -0.15, 0, Math.PI * 2); ctx.fill(); }
+    else { ctx.fillStyle = head; ctx.beginPath(); ctx.arc(x, y, r * 1.02, face ? Math.PI * 1.05 : 0, face ? Math.PI * 1.95 : Math.PI * 2); ctx.fill(); }
+  }
+  // cyclist on the street beside the sidewalk, seen from the front (oncoming) or from behind
+  function drawCyclist(c) {
+    const p = toScreen(c.z, -segAt(c.z).w * c.lane);
+    if (!p) return;
+    const Hh = 470 * p.k, lw = Math.max(1, Hh * 0.05), pedal = Math.sin(c.ph);
+    ctx.save(); ctx.translate(p.x, p.y); ctx.lineCap = 'round';
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath(); ctx.ellipse(0, 0, Hh * 0.14, Hh * 0.14 * p.flat, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1b1e24'; ctx.fillRect(-Hh * 0.025, -Hh * 0.4, Hh * 0.05, Hh * 0.4);   // tyre, end-on
+    ctx.fillStyle = c.color; ctx.fillRect(-Hh * 0.04, -Hh * 0.44, Hh * 0.08, Hh * 0.08);    // mudguard and frame
+    ctx.strokeStyle = '#2d3748'; ctx.lineWidth = lw * 1.4;                                   // legs pumping
+    for (const s of [-1, 1]) {
+      const foot = -Hh * (0.2 + 0.09 * pedal * s);
+      ctx.beginPath(); ctx.moveTo(s * Hh * 0.06, -Hh * 0.56); ctx.lineTo(s * Hh * 0.11, (foot - Hh * 0.56) / 2 - Hh * 0.04); ctx.lineTo(s * Hh * 0.05, foot); ctx.stroke();
+    }
+    ctx.fillStyle = c.coat;
+    ctx.beginPath(); ctx.moveTo(-Hh * 0.1, -Hh * 0.55); ctx.lineTo(Hh * 0.1, -Hh * 0.55); ctx.lineTo(Hh * 0.13, -Hh * 0.86); ctx.lineTo(-Hh * 0.13, -Hh * 0.86); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = c.coat; ctx.lineWidth = lw;                                            // arms down to the handlebar
+    for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * Hh * 0.12, -Hh * 0.83); ctx.lineTo(s * Hh * 0.17, -Hh * 0.68); ctx.stroke(); }
+    ctx.strokeStyle = '#4a4f57'; ctx.lineWidth = lw * 0.6;
+    ctx.beginPath(); ctx.moveTo(-Hh * 0.18, -Hh * 0.67); ctx.lineTo(Hh * 0.18, -Hh * 0.67); ctx.stroke();
+    if (c.toward && c.basket) { ctx.fillStyle = '#9a7448'; ctx.fillRect(-Hh * 0.09, -Hh * 0.64, Hh * 0.18, Hh * 0.1); }
+    drawRiderHead(0, -Hh * 0.95, Hh * 0.08, c.head, c.toward);
+    ctx.restore();
+  }
+  // bike crossing the zebra crossing, seen from the side, pedals going round
+  function drawBike(p, b) {
+    if (!p) return;
+    const L = b.len * ROAD_W * p.k, lw = Math.max(1, L * 0.028), R = 0.17 * L;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.scale(b.dir, 1); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath(); ctx.ellipse(0, 0, L * 0.5, L * 0.5 * p.flat * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#1b1e24'; ctx.lineWidth = lw;
+    for (const wx of [-0.32, 0.32]) { ctx.beginPath(); ctx.arc(wx * L, -R, R, 0, Math.PI * 2); ctx.stroke(); }
+    const P = (x, y) => [x * L, y * L], rear = P(-0.32, -0.17), bb = P(0, -0.17), seat = P(-0.1, -0.45), head = P(0.22, -0.47), front = P(0.32, -0.17), bar = P(0.24, -0.56);
+    const line = (pts, color, w) => { ctx.strokeStyle = color; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(...pts[0]); for (const q of pts.slice(1)) ctx.lineTo(...q); ctx.stroke(); };
+    line([rear, bb, seat, rear], b.color, lw * 1.3);
+    line([seat, head, bb], b.color, lw * 1.3);
+    line([head, front], b.color, lw * 1.3);
+    line([head, bar, P(0.19, -0.57)], '#4a4f57', lw);
+    // rider: hips on the saddle, leaning forward to the bar, feet on the turning pedals
+    const hip = P(-0.1, -0.5), shoulder = P(0.07, -0.85), crank = 0.08 * L;
+    for (const ph of [b.ph, b.ph + Math.PI]) {
+      const foot = [Math.cos(ph) * crank, -0.17 * L + Math.sin(ph) * crank];
+      const knee = [(hip[0] + foot[0]) / 2 + 0.1 * L, (hip[1] + foot[1]) / 2 - 0.04 * L];
+      line([hip, knee, foot], '#2d3748', lw * 2.2);
+    }
+    ctx.fillStyle = b.coat;
+    ctx.beginPath(); ctx.moveTo(hip[0] - 0.06 * L, hip[1]); ctx.lineTo(hip[0] + 0.06 * L, hip[1] + 0.02 * L); ctx.lineTo(shoulder[0] + 0.06 * L, shoulder[1]); ctx.lineTo(shoulder[0] - 0.07 * L, shoulder[1] - 0.02 * L); ctx.closePath(); ctx.fill();
+    line([shoulder, P(0.17, -0.7), bar], b.coat, lw * 1.6);
+    drawRiderHead(shoulder[0] + 0.04 * L, shoulder[1] - 0.11 * L, 0.075 * L, b.head, true);
     ctx.restore();
   }
   function drawBird(b) {
