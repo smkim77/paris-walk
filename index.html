@@ -1085,6 +1085,53 @@
     ctx.restore();
   }
   // bistro table with a coffee cup and two rattan chairs
+  // stable pseudo-random value per chair, so the same people stay at the same tables
+  const seatRand = (seed, side) => { const v = Math.sin(seed * 12.9898 + side * 78.233) * 43758.5453; return v - Math.floor(v); };
+  const SITTER_COATS = ['#4a5568', '#8c2a2a', '#2f5d46', '#c9a227', '#6b3a4a', '#1d3b6e'];
+  const SITTER_HAIR = ['#1b1e24', '#5b3a24', '#c9a26a', '#8a8a8a'];
+  // café guest seen from the side, facing the table (f = +1 right, -1 left), sipping now and then
+  function drawSitter(cx, y, k, f, r, seed) {
+    const coat = SITTER_COATS[Math.floor(r * 97) % SITTER_COATS.length];
+    const hair = SITTER_HAIR[Math.floor(r * 53) % SITTER_HAIR.length];
+    const beret = Math.floor(r * 31) % 3 === 0;
+    const sip = Math.sin(step * 0.18 + seed * 1.7 + f) > 0.55;   // raises the cup every few seconds
+    // legs: thigh along the seat, shin down to the floor
+    ctx.fillStyle = '#2d3138';
+    ctx.fillRect(Math.min(cx, cx + f * 190 * k), y - 520 * k, 190 * k, 60 * k);
+    ctx.fillRect(cx + f * 160 * k - 28 * k, y - 480 * k, 56 * k, 470 * k);
+    ctx.fillStyle = '#3a2416';
+    ctx.fillRect(cx + f * 160 * k - 30 * k + (f > 0 ? 0 : -30 * k), y - 30 * k, 90 * k, 30 * k);
+    // torso and head
+    ctx.fillStyle = coat;
+    ctx.beginPath(); ctx.roundRect(cx - f * 15 * k - 65 * k, y - 920 * k, 130 * k, 420 * k, 30 * k); ctx.fill();
+    ctx.fillStyle = '#e8b98f';
+    ctx.beginPath(); ctx.arc(cx + f * 5 * k, y - 1000 * k, 72 * k, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = hair;
+    ctx.beginPath(); ctx.arc(cx - f * 8 * k, y - 1015 * k, 70 * k, Math.PI, 0); ctx.fill();
+    if (beret) {
+      ctx.fillStyle = '#1b1e24';
+      ctx.beginPath(); ctx.ellipse(cx, y - 1068 * k, 85 * k, 30 * k, -f * 0.2, 0, Math.PI * 2); ctx.fill();
+    }
+    // arm with the cup: at the lips when sipping, otherwise resting by the table
+    const sx = cx + f * 20 * k, sy = y - 860 * k;
+    const hx = sip ? cx + f * 95 * k : cx + f * 230 * k, hy = sip ? y - 975 * k : y - 730 * k;
+    ctx.strokeStyle = coat; ctx.lineWidth = Math.max(1.5, 42 * k); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sip ? cx + f * 140 * k : cx + f * 150 * k, sip ? y - 820 * k : y - 720 * k); ctx.lineTo(hx, hy); ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(hx - 24 * k, hy - 50 * k, 48 * k, 55 * k);
+    ctx.fillStyle = '#5b3a24';
+    ctx.fillRect(hx - 20 * k, hy - 50 * k, 40 * k, 10 * k);
+    if (!sip && !reduceMotion && k > 0.05) { // a wisp of steam
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = Math.max(1, 10 * k);
+      ctx.beginPath();
+      for (let j = 0; j < 6; j++) {
+        const yy = hy - 60 * k - j * 22 * k, xx = hx + Math.sin(step * 0.3 + j) * 12 * k;
+        j ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy);
+      }
+      ctx.stroke();
+    }
+  }
+
   function drawTerrace(p, seed) {
     if (!p) return;
     const k = p.k, cw = 0.13 * ROAD_W * k;
@@ -1096,10 +1143,14 @@
       ctx.fillRect(cx - 40 * k, p.y - 450 * k, 80 * k, 450 * k);
       ctx.fillStyle = '#a77b4f';
       ctx.fillRect(cx - 70 * k, p.y - 470 * k, 140 * k, 40 * k);
+      // chair back on the far side from the table, so a sitter faces the table
       ctx.fillStyle = seed % 4 === 0 ? '#2f5d46' : '#9b2f2b';
-      ctx.fillRect(cx - side * 70 * k - (side > 0 ? 0 : 0), p.y - 860 * k, 20 * k, 400 * k);
+      ctx.fillRect(cx + side * 60 * k - 10 * k, p.y - 860 * k, 20 * k, 400 * k);
       ctx.fillStyle = '#c99d6a';
-      ctx.beginPath(); ctx.ellipse(cx - side * 60 * k, p.y - 880 * k, 25 * k, 25 * k, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx + side * 60 * k, p.y - 880 * k, 25 * k, 25 * k, 0, 0, Math.PI * 2); ctx.fill();
+      // about 6 in 10 chairs have someone having a coffee
+      const r = seatRand(seed, side);
+      if (r < 0.6) drawSitter(cx, p.y, k, -side, r, seed);
     }
     ctx.fillStyle = '#3a3a3a';
     ctx.fillRect(p.x - 18 * k, p.y - 680 * k, 36 * k, 680 * k);
