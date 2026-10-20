@@ -1042,15 +1042,19 @@
     return { s, x: W / 2 + s * (xacc - camX) * K2, y: HORIZON + s * CAM_H * K };
   }
   // world (z, lateral road units) → screen; k = pixels per world unit
-  function toScreen(z, xr, h = 0) {
+  // near: how close to the camera a thing may come before it is dropped. Things on the pavement go
+  // once they are under the walker's feet; tall street furniture by the curb (SCENERY_NEAR) stays
+  // until it is right beside the camera, by which time it has slid off the edge of the screen.
+  const SCENERY_NEAR = 75;
+  function toScreen(z, xr, h = 0, near = PLAYER_Z * 0.6) {
     const zr = z - position;
-    if (zr < PLAYER_Z * 0.6) return null; // already behind the walker
+    if (zr < near) return null; // already behind the walker
     const n = Math.floor(z / SEG_LEN) - baseIdx;
     if (n < 0 || n >= rows.length) return null;
     const row = rows[n], f = (z - row.zs) / SEG_LEN;
     const xacc = row.x1 + (row.x2 - row.x1) * f;
     const s = CAM_DEPTH / zr;
-    return { x: W / 2 + s * (xacc + xr * ROAD_W - camX) * K2, y: HORIZON + s * (CAM_H - h) * K, k: s * K2, flat: Math.min(0.55, CAM_H / zr * 0.5) };
+    return { x: W / 2 + s * (xacc + xr * ROAD_W - camX) * K2, y: HORIZON + s * (CAM_H - h) * K, k: s * K2, kv: s * K, flat: Math.min(0.55, CAM_H / zr * 0.5) };   // kv: pixels per unit of real height
   }
 
   function render() {
@@ -1083,28 +1087,31 @@
       if (!buckets.has(n)) buckets.set(n, []);
       buckets.get(n).push({ z, fn });
     };
+    // street furniture between the camera and the walker is painted after the walker, nearest last
+    const front = [];
+    const addScenery = (z, fn) => (z < PZ() ? front.push({ z, fn }) : add(z, fn));
     for (const row of rows) {
       const s = row.seg, zc = row.zs + SEG_LEN * 0.5;
       const S = s.side;
-      if (s.tree && s.treeStyle === 'round') add(zc, () => drawTree(toScreen(zc, -S * s.w * 1.13)));
-      if (s.lamp) add(zc + 1, () => drawLamp(toScreen(zc + 1, -S * s.w * 1.06)));
-      if (s.morris) add(zc + 2, () => drawMorris(toScreen(zc + 2, -S * s.w * 1.2)));
+      if (s.tree && s.treeStyle === 'round') addScenery(zc, () => drawTree(toScreen(zc, -S * s.w * 1.13, 0, SCENERY_NEAR)));
+      if (s.lamp) addScenery(zc + 1, () => drawLamp(toScreen(zc + 1, -S * s.w * 1.06, 0, SCENERY_NEAR)));
+      if (s.morris) addScenery(zc + 2, () => drawMorris(toScreen(zc + 2, -S * s.w * 1.2, 0, SCENERY_NEAR)));
       // bridge lamps on both parapets; the square's fountain or obelisk out in the open
       if (s.kind === 'bridge' && s.k % 8 === 4) for (const u of [1.08, -BRIDGE_ROAD]) add(zc + 3, () => drawLamp(toScreen(zc + 3, S * s.w * u)));
       if (s.feature) add(zc, () => (s.feature === 'fountain' ? drawFountain : drawObelisk)(toScreen(zc, S * s.w * 3.2)));
       if (s.terrace && s.i % 2 === 0) add(terraceZ(s), () => drawTerrace(toScreen(terraceZ(s), terraceX(s)), s.i));
     }
     // pruned crowns are real boxes: the far end comes from projecting the same spot further along.
-    // One whose near end is already level with the walker is cut off there, so the box (and a
-    // curtain of them) stays closed right up to the edge of the screen.
+    // One whose near end has already passed the camera is cut off right beside it, so the box (and a
+    // curtain of them) stays closed until it slides off the edge of the screen.
     for (let i = Math.max(0, baseIdx - 6); i < baseIdx + DRAW; i++) {
       const s = segs[i];
       if (!s || !s.tree || s.treeStyle === 'round') continue;
       const zc = s.i * SEG_LEN + SEG_LEN * 0.5, z2 = zc + (s.treeStyle === 'box' ? 1000 : 760);
-      const zf = Math.max(zc, position + PLAYER_Z * 0.62);
+      const zf = Math.max(zc, position + SCENERY_NEAR + 5);
       if (zf >= z2) continue;
-      const at = z => toScreen(z, -s.side * segAt(z).w * 1.13);
-      add(zf, () => drawTree(at(zf), s.treeStyle, at(z2), s.side, zf > zc));
+      const at = z => toScreen(z, -s.side * segAt(z).w * 1.13, 0, SCENERY_NEAR);
+      addScenery(zf, () => drawTree(at(zf), s.treeStyle, at(z2), s.side, zf > zc));
     }
     for (const tr of trucks) add(tr.z, () => drawCleaner(tr));
     for (const st of stains) add(st.z, () => drawStain(toScreen(st.z, st.x), st.seed));
@@ -1122,6 +1129,8 @@
     }
 
     drawPlayer();
+    front.sort((p, q) => q.z - p.z);
+    for (const it of front) it.fn();
 
     // falling droppings, from the pigeon down to their ground target
     for (const d of drops) {
@@ -1447,22 +1456,24 @@
     ctx.fillStyle = 'rgba(110,80,70,0.35)';
     for (let j = 0; j < 6; j++) ctx.fillRect(p.x - 40 * k, p.y - (1500 + j * 600) * k, 80 * k, 300 * k);
   }
+  // Crowns are placed at real heights (kv), above the camera, so walking right along the trees
+  // you pass underneath them: a crown rises off the top of the screen instead of swallowing it.
   function drawTree(p, style = 'round', p2 = null, S = 1, cut = false) {
     if (!p) return;
-    const k = p.k;
+    const k = p.k, kv = p.kv;
     if (!cut) {
       ctx.fillStyle = '#5b5e63'; ctx.fillRect(p.x - 160 * k, p.y - 14 * k, 320 * k, 28 * k);
-      ctx.fillStyle = '#7a6a58'; ctx.fillRect(p.x - 30 * k, p.y - 1300 * k, 60 * k, 1300 * k);
+      ctx.fillStyle = '#7a6a58'; ctx.fillRect(p.x - 30 * k, p.y - 1300 * kv, 60 * k, 1300 * kv);
     }
     if (style !== 'round') {
       // pruned crown: box = wide and low, trimmed into a continuous curtain along the street;
       // cube = as tall as it is wide, with gaps between trees. Every face of the box whose outside
       // looks toward us is painted (back-face test on the screen winding), so it never shows a hole,
       // whichever way the street bends.
-      const hw = style === 'box' ? 330 : 380, y0 = style === 'box' ? 1350 : 1300, y1 = style === 'box' ? 2150 : 2060;
-      const fx0 = p.x - hw * k, fx1 = p.x + hw * k, ft = p.y - y1 * k, fb = p.y - y0 * k;
+      const hw = style === 'box' ? 330 : 380, y0 = 1200, y1 = style === 'box' ? 1640 : 1700;   // real heights: the camera is at 1000
+      const fx0 = p.x - hw * k, fx1 = p.x + hw * k, ft = p.y - y1 * kv, fb = p.y - y0 * kv;
       if (p2) {
-        const k2 = p2.k, bx0 = p2.x - hw * k2, bx1 = p2.x + hw * k2, bt = p2.y - y1 * k2, bb = p2.y - y0 * k2;
+        const k2 = p2.k, bx0 = p2.x - hw * k2, bx1 = p2.x + hw * k2, bt = p2.y - y1 * p2.kv, bb = p2.y - y0 * p2.kv;
         const area = pts => { let a = 0; for (let j = 0; j < pts.length; j++) { const [x1, y1_] = pts[j], [x2, y2] = pts[(j + 1) % pts.length]; a += x1 * y2 - x2 * y1_; } return a; };
         const front = area([[fx0, ft], [fx1, ft], [fx1, fb], [fx0, fb]]);
         const faces = [
@@ -1485,10 +1496,10 @@
       return;
     }
     ctx.fillStyle = '#5f7f4e';
-    ctx.beginPath(); ctx.arc(p.x, p.y - 1650 * k, 520 * k, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x, p.y - 1650 * kv, 520 * k, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#6f9159';
-    ctx.beginPath(); ctx.arc(p.x - 200 * k, p.y - 1800 * k, 320 * k, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(p.x + 220 * k, p.y - 1550 * k, 300 * k, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x - 200 * k, p.y - 1780 * kv, 320 * k, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x + 220 * k, p.y - 1580 * kv, 300 * k, 0, Math.PI * 2); ctx.fill();
   }
   function drawLamp(p) {
     if (!p) return;
