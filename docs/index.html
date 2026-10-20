@@ -302,16 +302,20 @@
         if (ac.state === 'suspended') ac.resume();
       } catch (e) { ac = null; }
     }
+    // every short-lived sound is tracked so stopAll() can cut it off immediately
+    const live = new Set();
+    function track(node) { live.add(node); node.onended = () => live.delete(node); return node; }
+    function setNow(param, v) { const t = ac.currentTime; param.cancelScheduledValues(t); param.setValueAtTime(v, t); }
     // one oscillator with a pitch glide and a quick attack / exponential decay
     function tone({ f0, f1 = f0, dur, type = 'sine', gain = 0.2, delay = 0, attack = 0.005 }) {
-      const t = ac.currentTime + delay, o = ac.createOscillator(), g = ac.createGain();
+      const t = ac.currentTime + delay, o = track(ac.createOscillator()), g = ac.createGain();
       o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
       o.connect(g).connect(master); o.start(t); o.stop(t + dur + 0.02);
     }
     // filtered noise burst (splats, splashes, spray)
     function noise({ dur, gain = 0.3, freq = 1000, freq1 = freq, filter = 'lowpass', q = 0.8, delay = 0, attack = 0.004 }) {
-      const t = ac.currentTime + delay, s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+      const t = ac.currentTime + delay, s = track(ac.createBufferSource()), f = ac.createBiquadFilter(), g = ac.createGain();
       s.buffer = noiseBuf; s.loop = true;
       f.type = filter; f.Q.value = q; f.frequency.setValueAtTime(freq, t); f.frequency.exponentialRampToValueAtTime(Math.max(20, freq1), t + dur);
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -354,8 +358,36 @@
       amb.road = chain(loopNoise(), [filt('lowpass', 520)], 0);                                         // tyres on the road
       const eng = ac.createOscillator(); eng.type = 'sawtooth'; eng.frequency.value = 62; eng.start(); // engine hum
       amb.engine = chain(eng, [filt('lowpass', 300)], 0); amb.engineOsc = eng;
-      // café chatter: three "voices" of narrow-band noise hopping between vowel-like pitches
-      amb.voices = [0, 1, 2].map(() => { const f = filt('bandpass', 700, 8); return { ...chain(loopNoise(), [f], 0.55), f, next: 0 }; });
+      // café chatter: four people "talking" — a buzzy voice pitch shaped by two vowel formants,
+      // spoken in syllables and phrases with pauses, a bit muffled, over a soft crowd murmur
+      const talk = filt('lowpass', 2300);
+      amb.chat = chain(talk, [], 0.55);
+      amb.murmur = chain(loopNoise(), [filt('bandpass', 420, 1.1)], 0.55);
+      amb.voices = [112, 138, 198, 236].map(base => {
+        const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.value = base; o.start();
+        const f1 = filt('bandpass', 600, 6), f2 = filt('bandpass', 1500, 9), g = ac.createGain();
+        g.gain.value = 0;
+        o.connect(f1); o.connect(f2); f1.connect(g); f2.connect(g); g.connect(talk);
+        return { o, f1, f2, g, base, next: 0, talking: Math.random() < 0.5, phraseEnd: 0 };
+      });
+    }
+    // vowel formants (F1, F2) in Hz: a, e, i, o, u, and a schwa
+    const VOWELS = [[730, 1090], [530, 1840], [300, 2250], [570, 840], [320, 800], [500, 1500]];
+    function talkStep(v, t) {
+      if (t >= v.phraseEnd) {                        // switch between saying something and listening
+        v.talking = !v.talking;
+        v.phraseEnd = t + (v.talking ? 0.8 + Math.random() * 2.2 : 0.5 + Math.random() * 1.6);
+      }
+      v.g.gain.cancelScheduledValues(t);
+      if (!v.talking) { v.g.gain.setTargetAtTime(0, t, 0.06); v.next = v.phraseEnd; return; }
+      const dur = 0.11 + Math.random() * 0.15, [a, b] = VOWELS[Math.floor(Math.random() * VOWELS.length)];
+      const lift = v.base > 170 ? 1.15 : 1;          // higher voices have slightly higher formants
+      v.f1.frequency.setTargetAtTime(a * lift, t, 0.025);
+      v.f2.frequency.setTargetAtTime(b * lift, t, 0.025);
+      v.o.frequency.setTargetAtTime(v.base * (0.9 + Math.random() * 0.25), t, 0.05);   // intonation
+      v.g.gain.setTargetAtTime(0.8 + Math.random() * 0.4, t, 0.02);                      // syllable on…
+      v.g.gain.setTargetAtTime(0.12, t + dur * 0.7, 0.03);                               // …and off
+      v.next = t + dur;
     }
     function ambient(lv) {
       if (!ac || !amb) return;
@@ -366,14 +398,22 @@
       amb.engine.g.gain.setTargetAtTime(lv.car * 0.25, t, 0.06);
       amb.engineOsc.frequency.setTargetAtTime(58 + lv.car * 90, t, 0.1);
       if (amb.road.p) { amb.road.p.pan.setTargetAtTime(lv.carPan, t, 0.05); amb.engine.p.pan.setTargetAtTime(lv.carPan, t, 0.05); }
-      for (const v of amb.voices) {
-        if (t < v.next) continue;
-        v.next = t + 0.09 + Math.random() * 0.2;                         // a new "syllable"
-        v.f.frequency.setTargetAtTime(380 + Math.random() * 1250, t, 0.02);
-        v.g.gain.setTargetAtTime(Math.random() < 0.3 ? 0 : lv.chatter * (0.45 + Math.random() * 0.55), t, 0.03);
+      amb.chat.g.gain.setTargetAtTime(lv.chatter, t, 0.15);
+      amb.murmur.g.gain.setTargetAtTime(lv.chatter * 0.5, t, 0.15);
+      if (lv.chatter > 0.001) for (const v of amb.voices) if (t >= v.next) talkStep(v, t);
+    }
+    // silence everything right now: one-shot sounds, scheduled music notes, all ambience
+    function stopAll() {
+      if (!ac) return;
+      for (const n of live) { try { n.stop(); } catch (e) {} }
+      live.clear();
+      musicOn = false; mNext = 0;
+      if (musicGain) setNow(musicGain.gain, 0);
+      if (amb) {
+        for (const ch of [amb.spray, amb.flies, amb.road, amb.engine, amb.chat, amb.murmur]) setNow(ch.g.gain, 0);
+        for (const v of amb.voices) { setNow(v.g.gain, 0); v.next = 0; v.phraseEnd = 0; }
       }
     }
-    const SILENT = { spray: 0, flies: 0, car: 0, carPan: 0, chatter: 0 };
 
     // ---- background music: a soft musette loop (D minor), scheduled a little ahead ----
     const M_STEP = 0.34;
@@ -391,11 +431,11 @@
       const g = ac.createGain();
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + 0.04);
       g.gain.setValueAtTime(gain, t + dur * 0.7); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      for (const det of [1, 1.004]) { const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.value = hz(m) * det; o.connect(f); o.start(t); o.stop(t + dur + 0.02); }
+      for (const det of [1, 1.004]) { const o = track(ac.createOscillator()); o.type = 'sawtooth'; o.frequency.value = hz(m) * det; o.connect(f); o.start(t); o.stop(t + dur + 0.02); }
       f.connect(g).connect(musicGain);
     }
     function bass(m, t) {
-      const o = ac.createOscillator(), g = ac.createGain(); o.type = 'triangle'; o.frequency.value = hz(m);
+      const o = track(ac.createOscillator()), g = ac.createGain(); o.type = 'triangle'; o.frequency.value = hz(m);
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
       o.connect(g).connect(musicGain); o.start(t); o.stop(t + 0.5);
     }
@@ -418,7 +458,7 @@
         if (ac && !amb && !window.PROMO) { buildAmbient(); musicGain = ac.createGain(); musicGain.gain.value = 0; musicGain.connect(master); }
       },
       ambient(lv) { if (!window.PROMO) ambient(lv); },
-      quiet() { ambient(SILENT); this.musicStop(); },
+      quiet() { stopAll(); },
       musicStart() {
         if (!ac || !musicGain) return;
         musicOn = true; mNext = Math.max(mNext, ac.currentTime + 0.1);
@@ -577,16 +617,16 @@
       const s = segs[i];
       if (s && s.terrace && i % 2 === 0) chatter = Math.max(chatter, near(terraceZ(s) - pz, 4000));
     }
-    sfx.ambient({ spray: spray * 0.35, flies: flies * 0.09, car: car * 0.5, carPan, chatter: chatter * 1.6 });
+    sfx.ambient({ spray: spray * 0.35, flies: flies * 0.09, car: car * 0.5, carPan, chatter: chatter * 0.45 });
     sfx.musicTick();
   }
 
   function takeHit(label, color, sound) {
-    sfx.play(sound);
     lives--; invuln = 1.4; shake = reduceMotion ? 0 : 0.35; flash = { color, t: 0.35 };
     texts.push({ text: label, life: 1.1, dy: 0 });
     updateHud();
-    if (lives <= 0) { render(); gameOver(); return true; }
+    if (lives <= 0) { render(); gameOver(); sfx.play(sound); return true; } // after gameOver silenced everything
+    sfx.play(sound);
     return false;
   }
 
