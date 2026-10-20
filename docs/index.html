@@ -331,8 +331,104 @@
       over() { [523.3, 466.2, 392, 311.1].forEach((f, i) => tone({ f0: f, dur: 0.32, type: 'triangle', gain: 0.18, delay: i * 0.17 })); },
       start() { [523.3, 659.3, 784].forEach((f, i) => tone({ f0: f, dur: 0.25, type: 'triangle', gain: 0.14, delay: i * 0.08 })); }
     };
+    // ---- ambience: looping sources whose volume follows what's near the walker ----
+    let amb = null;
+    function buildAmbient() {
+      const loopNoise = () => { const s = ac.createBufferSource(); s.buffer = noiseBuf; s.loop = true; s.start(0, Math.random()); return s; };
+      const filt = (type, f, q = 0.7) => { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
+      // source → filters → volume → stereo position → master
+      const chain = (src, filters, pan) => {
+        let node = src;
+        for (const f of filters) { node.connect(f); node = f; }
+        const g = ac.createGain(); g.gain.value = 0; node.connect(g);
+        let p = null;
+        if (ac.createStereoPanner) { p = ac.createStereoPanner(); p.pan.value = pan; g.connect(p).connect(master); } else g.connect(master);
+        return { g, p };
+      };
+      amb = {};
+      amb.spray = chain(loopNoise(), [filt('bandpass', 2400, 0.5), filt('highpass', 700)], -0.55);   // hiss of water on stone
+      const fly = ac.createOscillator(); fly.type = 'sawtooth'; fly.frequency.value = 215;            // buzzing wings
+      const lfo = ac.createOscillator(); lfo.frequency.value = 11; const depth = ac.createGain(); depth.gain.value = 28;
+      lfo.connect(depth).connect(fly.frequency); fly.start(); lfo.start();
+      amb.flies = chain(fly, [filt('lowpass', 1500)], 0);
+      amb.road = chain(loopNoise(), [filt('lowpass', 520)], 0);                                         // tyres on the road
+      const eng = ac.createOscillator(); eng.type = 'sawtooth'; eng.frequency.value = 62; eng.start(); // engine hum
+      amb.engine = chain(eng, [filt('lowpass', 300)], 0); amb.engineOsc = eng;
+      // café chatter: three "voices" of narrow-band noise hopping between vowel-like pitches
+      amb.voices = [0, 1, 2].map(() => { const f = filt('bandpass', 700, 8); return { ...chain(loopNoise(), [f], 0.55), f, next: 0 }; });
+    }
+    function ambient(lv) {
+      if (!ac || !amb) return;
+      const t = ac.currentTime;
+      amb.spray.g.gain.setTargetAtTime(lv.spray, t, 0.08);
+      amb.flies.g.gain.setTargetAtTime(lv.flies, t, 0.08);
+      amb.road.g.gain.setTargetAtTime(lv.car, t, 0.06);
+      amb.engine.g.gain.setTargetAtTime(lv.car * 0.25, t, 0.06);
+      amb.engineOsc.frequency.setTargetAtTime(58 + lv.car * 90, t, 0.1);
+      if (amb.road.p) { amb.road.p.pan.setTargetAtTime(lv.carPan, t, 0.05); amb.engine.p.pan.setTargetAtTime(lv.carPan, t, 0.05); }
+      for (const v of amb.voices) {
+        if (t < v.next) continue;
+        v.next = t + 0.09 + Math.random() * 0.2;                         // a new "syllable"
+        v.f.frequency.setTargetAtTime(380 + Math.random() * 1250, t, 0.02);
+        v.g.gain.setTargetAtTime(Math.random() < 0.3 ? 0 : lv.chatter * (0.45 + Math.random() * 0.55), t, 0.03);
+      }
+    }
+    const SILENT = { spray: 0, flies: 0, car: 0, carPan: 0, chatter: 0 };
+
+    // ---- background music: a soft musette loop (D minor), scheduled a little ahead ----
+    const M_STEP = 0.34;
+    const M_CHORDS = [[50, [62, 65, 69]], [45, [61, 64, 67]], [50, [62, 65, 69]], [43, [62, 67, 70]], [45, [61, 64, 67]], [50, [62, 65, 69]], [46, [62, 65, 70]], [45, [61, 64, 67]]];
+    const M_MELODY = [
+      [74, null, 77, 76, 74, null, 69, null], [73, null, 76, 79, 77, 76, 73, null],
+      [74, 77, 81, null, 79, 77, 76, 74], [79, null, 77, 74, 70, null, 74, null],
+      [76, 73, 69, 73, 76, 79, 77, 76], [74, null, null, null, 69, null, 74, null],
+      [70, null, 74, 77, 74, null, 70, null], [73, null, 76, null, 69, null, null, null]
+    ];
+    let musicGain = null, musicOn = false, mNext = 0, mStep = 0;
+    const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+    function reed(m, t, dur, gain) { // two slightly detuned reeds through a soft lowpass: a quiet accordion
+      const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1500;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + 0.04);
+      g.gain.setValueAtTime(gain, t + dur * 0.7); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      for (const det of [1, 1.004]) { const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.value = hz(m) * det; o.connect(f); o.start(t); o.stop(t + dur + 0.02); }
+      f.connect(g).connect(musicGain);
+    }
+    function bass(m, t) {
+      const o = ac.createOscillator(), g = ac.createGain(); o.type = 'triangle'; o.frequency.value = hz(m);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+      o.connect(g).connect(musicGain); o.start(t); o.stop(t + 0.5);
+    }
+    function scheduleStep(i, t) {
+      const bar = Math.floor(i / 8) % M_CHORDS.length, s = i % 8, [b, chord] = M_CHORDS[bar];
+      if (s % 4 === 0) bass(b, t);
+      if (s % 4 === 2) bass(b + 7, t);
+      if (s % 2 === 1) for (const m of chord) reed(m, t, M_STEP * 0.6, 0.05);
+      const m = M_MELODY[bar][s];
+      if (m !== null) {
+        let len = 1;
+        while (s + len < 8 && M_MELODY[bar][s + len] === null && len < 3) len++;
+        reed(m, t, M_STEP * len * 0.95, 0.09);
+      }
+    }
+
     return {
-      unlock,
+      unlock() {
+        unlock();
+        if (ac && !amb && !window.PROMO) { buildAmbient(); musicGain = ac.createGain(); musicGain.gain.value = 0; musicGain.connect(master); }
+      },
+      ambient(lv) { if (!window.PROMO) ambient(lv); },
+      quiet() { ambient(SILENT); this.musicStop(); },
+      musicStart() {
+        if (!ac || !musicGain) return;
+        musicOn = true; mNext = Math.max(mNext, ac.currentTime + 0.1);
+        musicGain.gain.setTargetAtTime(0.22, ac.currentTime, 0.6);   // kept low: background only
+      },
+      musicStop() { musicOn = false; if (musicGain) musicGain.gain.setTargetAtTime(0, ac.currentTime, 0.25); },
+      musicTick() {
+        if (!ac || !musicOn) return;
+        while (mNext < ac.currentTime + 0.4) { scheduleStep(mStep++, mNext); mNext += M_STEP; }
+      },
       get muted() { return muted; },
       toggleMute() {
         muted = !muted;
@@ -466,6 +562,25 @@
     return { lane, dir, x: x ?? -dir * 6, v: 2.8 + Math.random() * 1.2 + Math.min(dist * 0.004, 1.5), len: 1.9 + Math.random() * 0.4, color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)] };
   }
 
+  // ambience volumes from what is near the walker (closer = louder, 0 when out of earshot)
+  const near = (d, range) => { const v = 1 - Math.abs(d) / range; return v > 0 ? v * v : 0; };
+  function updateAmbience(pz) {
+    let spray = 0, flies = 0, car = 0, carPan = 0, chatter = 0;
+    for (const tr of trucks) spray = Math.max(spray, near(tr.z - pz, 4500));
+    for (const p of poops) if (p.flies > 0.1) flies = Math.max(flies, p.flies * near(Math.hypot(p.z - pz, (p.x - playerX) * ROAD_W), 2600));
+    for (const c of crossings) for (const cr of c.cars) {
+      const dx = (cr.x - playerX) * ROAD_W, v = near(Math.hypot(c.lanes[cr.lane] - pz, dx), 5000);
+      if (v > car) { car = v; carPan = Math.max(-1, Math.min(1, dx / 2500)); }
+    }
+    const pi = Math.floor(pz / SEG_LEN);
+    for (let i = pi - 6; i <= pi + 30; i++) {
+      const s = segs[i];
+      if (s && s.terrace && i % 2 === 0) chatter = Math.max(chatter, near(terraceZ(s) - pz, 4000));
+    }
+    sfx.ambient({ spray: spray * 0.35, flies: flies * 0.09, car: car * 0.5, carPan, chatter: chatter * 1.6 });
+    sfx.musicTick();
+  }
+
   function takeHit(label, color, sound) {
     sfx.play(sound);
     lives--; invuln = 1.4; shake = reduceMotion ? 0 : 0.35; flash = { color, t: 0.35 };
@@ -476,7 +591,7 @@
   }
 
   function start() {
-    sfx.unlock(); sfx.play('start');
+    sfx.unlock(); sfx.play('start'); sfx.musicStart();
     reset();
     state = 'play';
     $('startScreen').hidden = true; $('overScreen').hidden = true; $('pauseBtn').hidden = false;
@@ -489,10 +604,12 @@
   function togglePause() {
     if (state === 'play') {
       state = 'paused'; keys = {}; drag = null;
+      sfx.quiet();
       render();
       $('pauseBtn').textContent = '▶'; $('pauseBtn').setAttribute('aria-label', '계속하기');
     } else if (state === 'paused') {
       state = 'play';
+      sfx.musicStart();
       $('pauseBtn').textContent = 'II'; $('pauseBtn').setAttribute('aria-label', '일시 정지');
       last = performance.now();
       requestAnimationFrame(loop);
@@ -502,7 +619,7 @@
   function gameOver() {
     state = 'over';
     $('pauseBtn').hidden = true;
-    sfx.play('over');
+    sfx.quiet(); sfx.play('over');
     const d = Math.floor(dist), p = PLACES[placeAt(dist)], sc = Math.floor(score);
     let msg = `${p.ko} 근처에서 구두가 다 망가졌습니다. `;
     if (d < 100) msg += '파리지앵이 되려면 아직 멀었어요.';
@@ -722,6 +839,7 @@
     birds = birds.filter(b => b.x > -60 && b.x < W + 60);
     texts = texts.filter(t => t.life > 0);
 
+    updateAmbience(pz);
     const shown = Math.floor(dist);
     if (shown !== update.lastShown) { update.lastShown = shown; updateHud(); }
   }
