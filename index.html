@@ -197,15 +197,22 @@
   // side: +1 = street on the left and buildings on the right, -1 = the mirror image. It flips only
   // across a crossing at the end of a "change of scene" (a Seine bridge, an open square or a wide
   // boulevard), so the new street simply starts the other way round.
-  function resetTrack() { segs = []; crossings = []; gen = { w: 1, nextCross: 70, lastTerrace: -999, side: 1, kind: 'street', nextScene: 200, cn: 5, flipX: false, k: 0, feature: null }; }
+  function resetTrack() { segs = []; crossings = []; gen = { w: 1, nextCross: 70, lastTerrace: -999, side: 1, kind: 'street', nextScene: 200, cn: 5, flipX: false, k: 0, feature: null, treeStyle: 'round' }; }
   // sidewalk width relative to the obstacles (1.2 = 20% wider than the original layout)
   const SIDEWALK = 1.2;
+  // street trees are one kind per block: natural round crowns, or Paris-style pruned ones, clipped
+  // square or into a long low rectangle. The kind can only change across a crossing.
+  function nextTreeStyle() {
+    if (Math.random() < 0.3) return;                       // sometimes the next block keeps the same trees
+    const others = ['round', 'square', 'rect'].filter(t => t !== gen.treeStyle);
+    gen.treeStyle = others[Math.floor(Math.random() * others.length)];
+  }
   function pushSeg(curve, w, crossing, k = -1, terrace = false) {
     const i = segs.length, bld = Math.floor(i / 7), kind = crossing ? 'crossing' : gen.kind, street = kind === 'street';
     segs.push({
       i, curve, w: w * SIDEWALK, crossing, ck: k, cn: gen.cn, flipX: crossing && gen.flipX, side: gen.side, kind, k: gen.k++,
       bld, shop: bld % 3 !== 1, terrace, feature: kind === 'square' && gen.k === 17 ? gen.feature : null,
-      tree: (street || kind === 'square') && i % 5 === 0, lamp: (street || kind === 'square') && i % 9 === 4, morris: street && i % 53 === 31
+      tree: (street || kind === 'square') && i % 5 === 0, treeStyle: gen.treeStyle, lamp: (street || kind === 'square') && i % 9 === 4, morris: street && i % 53 === 31
     });
   }
   // n = 5: an ordinary side street (one lane each way); n = 9: a wide boulevard (two lanes each way).
@@ -216,6 +223,7 @@
     for (let k = 0; k < n; k++) pushSeg(0, gen.w, true, k);
     gen.cn = 5; gen.flipX = false;
     if (flip) gen.side = -gen.side;
+    nextTreeStyle();
     const lanes = n === 5 ? [1.6, 3.4] : [1.6, 3.2, 5.8, 7.4];
     crossings.push({ z0: start * SEG_LEN, z1: (start + n) * SEG_LEN, lanes: lanes.map(l => (start + l) * SEG_LEN),
       dirs: n === 5 ? [1, -1] : [1, 1, -1, -1], cars: [], spawn: lanes.map((_, j) => 0.2 + j * 0.6), primed: false });
@@ -1078,7 +1086,7 @@
     for (const row of rows) {
       const s = row.seg, zc = row.zs + SEG_LEN * 0.5;
       const S = s.side;
-      if (s.tree) add(zc, () => drawTree(toScreen(zc, -S * s.w * 1.13)));
+      if (s.tree) add(zc, () => drawTree(toScreen(zc, -S * s.w * 1.13), s.treeStyle));
       if (s.lamp) add(zc + 1, () => drawLamp(toScreen(zc + 1, -S * s.w * 1.06)));
       if (s.morris) add(zc + 2, () => drawMorris(toScreen(zc + 2, -S * s.w * 1.2)));
       // bridge lamps on both parapets; the square's fountain or obelisk out in the open
@@ -1427,11 +1435,27 @@
     ctx.fillStyle = 'rgba(110,80,70,0.35)';
     for (let j = 0; j < 6; j++) ctx.fillRect(p.x - 40 * k, p.y - (1500 + j * 600) * k, 80 * k, 300 * k);
   }
-  function drawTree(p) {
+  function drawTree(p, style = 'round') {
     if (!p) return;
     const k = p.k;
     ctx.fillStyle = '#5b5e63'; ctx.fillRect(p.x - 160 * k, p.y - 14 * k, 320 * k, 28 * k);
     ctx.fillStyle = '#7a6a58'; ctx.fillRect(p.x - 30 * k, p.y - 1300 * k, 60 * k, 1300 * k);
+    if (style !== 'round') {
+      // clipped crown, flat like the round one: a square, or a long low rectangle that reads as a
+      // continuous trimmed curtain once the trees line up into the distance
+      const hw = style === 'square' ? 460 : 640, top = style === 'square' ? 2150 : 1950, bot = 1250;
+      const x0 = p.x - hw * k, w = 2 * hw * k, y0 = p.y - top * k, h = (top - bot) * k;
+      ctx.fillStyle = '#5f7f4e'; ctx.fillRect(x0, y0, w, h);
+      ctx.fillStyle = '#4f6d41'; ctx.fillRect(x0, y0 + h * 0.84, w, h * 0.16);              // shaded underside
+      ctx.fillStyle = '#7a9a62'; ctx.fillRect(x0, y0, w, h * 0.1);                          // sunlit clipped top
+      ctx.fillStyle = 'rgba(40,64,34,0.16)';                                               // a little leafy texture
+      for (let j = 0; j < 9; j++) {
+        ctx.beginPath();
+        ctx.ellipse(x0 + (0.1 + ((j * 0.37) % 1) * 0.8) * w, y0 + (0.18 + ((j * 0.61) % 1) * 0.6) * h, w * 0.06, h * 0.06, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return;
+    }
     ctx.fillStyle = '#5f7f4e';
     ctx.beginPath(); ctx.arc(p.x, p.y - 1650 * k, 520 * k, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#6f9159';
