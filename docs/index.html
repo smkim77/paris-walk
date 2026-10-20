@@ -204,26 +204,22 @@
   // side: +1 = street on the left and buildings on the right, -1 = the mirror image. It flips only
   // across a crossing at the end of a "change of scene" (a Seine bridge, an open square or a wide
   // boulevard), so the new street simply starts the other way round.
-  function resetTrack() { segs = []; crossings = []; gen = { w: 1, nextCross: 70, lastTerrace: -999, side: 1, kind: 'street', nextScene: 200, cn: 5, flipX: false, k: 0, feature: null, treeStyle: 'round', treeUntil: 60 }; }
+  function resetTrack() { segs = []; crossings = []; gen = { w: 1, nextCross: 70, lastTerrace: -999, side: 1, kind: 'street', nextScene: 200, cn: 5, flipX: false, k: 0, feature: null, treeStyle: 'round' }; }
   // sidewalk width relative to the obstacles (1.2 = 20% wider than the original layout)
   const SIDEWALK = 1.2;
-  // street trees come in stretches of one kind: natural round crowns, or Paris-style pruned ones,
-  // either a long boxed "curtain" or a row of separate cubes
-  function treeStyleAt(i) {
-    if (i >= gen.treeUntil) {
-      const r = Math.random(), was = gen.treeStyle;
-      gen.treeStyle = r < 0.4 ? 'round' : r < 0.7 ? 'box' : 'cube';
-      if (gen.treeStyle === was) gen.treeStyle = was === 'round' ? (r < 0.55 ? 'box' : 'cube') : 'round';
-      gen.treeUntil = i + 70 + Math.floor(Math.random() * 90);
-    }
-    return gen.treeStyle;
+  // street trees are one kind per block: natural round crowns, or Paris-style pruned ones, either a
+  // long boxed "curtain" or a row of separate cubes. The kind can only change across a crossing.
+  function nextTreeStyle() {
+    if (Math.random() < 0.3) return;                       // sometimes the next block keeps the same trees
+    const others = ['round', 'box', 'cube'].filter(t => t !== gen.treeStyle);
+    gen.treeStyle = others[Math.floor(Math.random() * others.length)];
   }
   function pushSeg(curve, w, crossing, k = -1, terrace = false) {
     const i = segs.length, bld = Math.floor(i / 7), kind = crossing ? 'crossing' : gen.kind, street = kind === 'street';
     segs.push({
       i, curve, w: w * SIDEWALK, crossing, ck: k, cn: gen.cn, flipX: crossing && gen.flipX, side: gen.side, kind, k: gen.k++,
       bld, shop: bld % 3 !== 1, terrace, feature: kind === 'square' && gen.k === 17 ? gen.feature : null,
-      tree: (street || kind === 'square') && i % 5 === 0, treeStyle: treeStyleAt(i), lamp: (street || kind === 'square') && i % 9 === 4, morris: street && i % 53 === 31
+      tree: (street || kind === 'square') && i % 5 === 0, treeStyle: gen.treeStyle, lamp: (street || kind === 'square') && i % 9 === 4, morris: street && i % 53 === 31
     });
   }
   // n = 5: an ordinary side street (one lane each way); n = 9: a wide boulevard (two lanes each way).
@@ -234,6 +230,7 @@
     for (let k = 0; k < n; k++) pushSeg(0, gen.w, true, k);
     gen.cn = 5; gen.flipX = false;
     if (flip) gen.side = -gen.side;
+    nextTreeStyle();
     const lanes = n === 5 ? [1.6, 3.4] : [1.6, 3.2, 5.8, 7.4];
     crossings.push({ z0: start * SEG_LEN, z1: (start + n) * SEG_LEN, lanes: lanes.map(l => (start + l) * SEG_LEN),
       dirs: n === 5 ? [1, -1] : [1, 1, -1, -1], cars: [], spawn: lanes.map((_, j) => 0.2 + j * 0.6), primed: false });
