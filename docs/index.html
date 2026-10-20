@@ -525,7 +525,7 @@
     // from the original score: main theme (A major) twice, the second strain (D major, ending on F# minor)
     // twice, then the high, bouncy pp middle of Waltz No. 1 (chords answered by a high A or B, eighth by
     // eighth) twice, and round again. 3/4: bass on beat 1, chord on beats 2 and 3.
-    const M_BEAT = 0.3, M_HALF = M_BEAT / 2;   // the scheduler steps in half beats (for the eighth-note runs)
+    const M_BEAT = 0.3;   // seconds per beat; the scheduler steps in half beats (for the eighth-note runs)
     // melodies as [MIDI note, beats] (null = rest)
     const M_THEME = [[73, 3], [76, 2], [78, 1], [78, 6], [74, 3], [78, 2], [80, 1], [80, 6],
                      [83, 3], [81, 2], [73, 1], [76, 3], [78, 2], [73, 1], [80, 3], [80, 3], [81, 4], [null, 2]];
@@ -576,13 +576,19 @@
       return { notes, bars, len: h };
     })();
     let musicGain = null, musicOn = false, mNext = 0, mStep = 0;
+    // hard mode plays the same waltz gone sour: in the minor (C# and F# lowered a semitone, so
+    // A major → A minor and D major → D minor), slower, through a duller filter with a wobblier
+    // detune, over a bass an octave lower
+    let mDark = false;
+    const mBeat = () => mDark ? 0.38 : M_BEAT;
+    const darken = m => { const pc = ((m % 12) + 12) % 12; return mDark && (pc === 1 || pc === 6) ? m - 1 : m; };
     const hz = m => 440 * Math.pow(2, (m - 69) / 12);
     function reed(m, t, dur, gain) { // two slightly detuned reeds through a soft lowpass: a quiet accordion
-      const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1500;
+      const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = mDark ? 850 : 1500;
       const g = ac.createGain();
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + 0.04);
       g.gain.setValueAtTime(gain, t + dur * 0.7); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      for (const det of [1, 1.004]) { const o = track(ac.createOscillator()); o.type = 'sawtooth'; o.frequency.value = hz(m) * det; o.connect(f); o.start(t); o.stop(t + dur + 0.02); }
+      for (const det of [1, mDark ? 1.009 : 1.004]) { const o = track(ac.createOscillator()); o.type = 'sawtooth'; o.frequency.value = hz(m) * det; o.connect(f); o.start(t); o.stop(t + dur + 0.02); }
       f.connect(g).connect(musicGain);
     }
     function bass(m, t) {
@@ -594,10 +600,10 @@
       const h = i % SONG.len;
       if (h % 2 === 0) {                                  // on the beat: oom-pah-pah
         const beat = (h / 2) % 3, [b, chord, end] = SONG.bars[Math.floor(h / 6)];
-        if (beat === 0) bass(b, t);
-        else if (!end) for (const m of M_CHORD[chord]) reed(m, t, M_BEAT * 0.55, 0.035);
+        if (beat === 0) bass(darken(b) - (mDark ? 12 : 0), t);
+        else if (!end) for (const m of M_CHORD[chord]) reed(darken(m), t, mBeat() * 0.55, 0.035);
       }
-      for (const [n, len, gain] of SONG.notes[h] || []) reed(n, t, M_BEAT * len * 0.95, gain);
+      for (const [n, len, gain] of SONG.notes[h] || []) reed(darken(n), t, mBeat() * len * 0.95, gain);
     }
 
     return {
@@ -607,8 +613,9 @@
       },
       ambient(lv) { if (!window.PROMO) ambient(lv); },
       quiet() { stopAll(); },
-      musicStart(fromTop) {
+      musicStart(fromTop, dark) {
         if (!ac || !musicGain) return;
+        if (dark !== undefined) mDark = dark;
         if (fromTop) mStep = 0;   // a new game starts the waltz from the beginning; resuming carries on
         musicOn = true; mNext = Math.max(mNext, ac.currentTime + 0.1);
         musicGain.gain.setTargetAtTime(0.22, ac.currentTime, 0.6);   // kept low: background only
@@ -616,7 +623,7 @@
       musicStop() { musicOn = false; if (musicGain) musicGain.gain.setTargetAtTime(0, ac.currentTime, 0.25); },
       musicTick() {
         if (!ac || !musicOn) return;
-        while (mNext < ac.currentTime + 0.4) { scheduleStep(mStep++, mNext); mNext += M_HALF; }
+        while (mNext < ac.currentTime + 0.4) { scheduleStep(mStep++, mNext); mNext += mBeat() / 2; }
       },
       get muted() { return muted; },
       toggleMute() {
@@ -635,7 +642,7 @@
     position = 0; speed = SPEED0; pace = 1; jumpT = 0; jumpCd = 0; dist = 0; lives = 3; invuln = 0; playerX = 0; step = 0; skyOffset = 0; shake = 0; flash = null;
     poops = []; dogs = []; peers = []; birds = []; drops = []; stains = []; texts = []; trucks = [];
     cyclists = []; cycT = 0;
-    fires = []; molotovs = []; fireT = 3; molotT = 6;
+    fires = []; molotovs = []; fireT = 3; molotT = 3;
     edgeT = 0; edgeSide = 0; cleanT = 14; score = 0; slowT = 0; slowWarned = false; runMs = 0;
     spawnT = 0.3; dogT = 2.5; birdT = 5; peeT = 3; shownPlace = -1; plate = null;
     updateHud(); updatePlace();
@@ -844,7 +851,7 @@
     document.body.classList.toggle('hard', hard);
     loadBest();
     $('lbStatus').hidden = true;
-    sfx.unlock(); sfx.play('start'); sfx.musicStart(true);
+    sfx.unlock(); sfx.play('start'); sfx.musicStart(true, hard);
     reset();
     state = 'play';
     $('startScreen').hidden = true; $('overScreen').hidden = true; $('pauseBtn').hidden = false;
@@ -990,9 +997,9 @@
     if (hard) {
       fireT -= dt;
       if (fireT <= 0) { spawnFire(); fireT = Math.max(2.4, 6 - dist / 250) * (0.7 + Math.random() * 0.6); }
-      if (dist > 30) {
+      if (dist > 20) {
         molotT -= dt;
-        if (molotT <= 0) { throwMolotov(); molotT = Math.max(2.2, 6.5 - dist / 200) * (0.7 + Math.random() * 0.6); }
+        if (molotT <= 0) { throwMolotov(); molotT = Math.max(1.3, 4 - dist / 250) * (0.7 + Math.random() * 0.6); }
       }
     }
     for (const f of fires) { f.t += dt; if (f.kind === 'patch') f.life -= dt; }
