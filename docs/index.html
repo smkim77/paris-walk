@@ -51,6 +51,7 @@
     border-radius: 6px; cursor: pointer;
   }
   .pause-btn:focus-visible { outline: 3px solid #f2d27a; }
+  .pause-btn.sound { right: auto; left: 10px; z-index: 10; font-size: 1.1rem; }
   #shoes { color: #f2b8a0; letter-spacing: 0.1em; }
   .stage { position: relative; flex: 1; min-height: 0; border-radius: 6px; overflow: hidden; touch-action: none; }
   canvas { display: block; width: 100%; height: 100%; }
@@ -118,13 +119,14 @@
   <div class="stage" id="stage">
     <canvas id="c"></canvas>
     <button class="pause-btn" id="pauseBtn" type="button" aria-label="일시 정지" hidden>II</button>
+    <button class="pause-btn sound" id="soundBtn" type="button" aria-label="소리 끄기">🔊</button>
     <div class="overlay" id="startScreen">
       <h2>Attention, la crotte!</h2>
       <p>에펠탑에서 사크레쾨르까지, 파리 명소를 지나 최대한 멀리 걸어가세요. 구두 세 켤레가 다 망가지면 끝입니다.</p>
       <p>개똥은 피하고, 파리 떼가 꼬인 똥은 더 크게 돌아가세요. 벽을 보고 선 행인 근처엔 오줌 웅덩이가 남고, 비둘기가 지나가면 바닥 표적을 피하세요. 횡단보도에선 차를 조심!</p>
       <p>구석만 따라 걷는 건 위험해요. 벽 쪽엔 카페 테라스, 연석 쪽엔 살수차 물줄기가 있고, 한쪽 구석에 오래 붙어 있으면 바로 앞에 행인이 나타납니다.</p>
       <p>빨리 걸을수록 점수 배율이 올라가요. 느긋하게 걸으면 안전하지만 점수가 적고, 비둘기들이 노리기 시작합니다.</p>
-      <p class="keys">← → / A D 좌우 이동 (좌우 드래그)<br>↑ ↓ / W S 걷는 속도 (위아래 드래그)<br>Space 점프 (탭)<br>P 일시 정지 (II 버튼)</p>
+      <p class="keys">← → / A D 좌우 이동 (좌우 드래그)<br>↑ ↓ / W S 걷는 속도 (위아래 드래그)<br>Space 점프 (탭)<br>P 일시 정지 (II 버튼)<br>M 소리 켜기/끄기 (🔊 버튼)</p>
       <button id="startBtn" type="button">산책 시작</button>
       <div class="row lb-only" hidden>
         <button class="ghost" id="boardBtn" type="button">🏆 순위 보기</button>
@@ -278,7 +280,70 @@
   function jump() {
     if (state !== 'play' || jumpCd > 0) return;
     jumpT = JUMP_TIME; jumpCd = JUMP_COOLDOWN;
-  }  let keys = {}, drag = null, last = 0, spawnT = 0, dogT = 0, birdT = 0, peeT = 0, shownPlace = -1, plate = null;
+    sfx.play('jump');
+  }
+
+  // ---------- sound effects ----------
+  // Everything is synthesized with Web Audio, so there are no sound files to load.
+  // Browsers only allow sound after a click or key press, so audio starts with the first game.
+  const sfx = (() => {
+    let ac = null, master = null, noiseBuf = null;
+    let muted = false;
+    try { muted = localStorage.getItem('ppd-mute') === '1'; } catch (e) {}
+    function unlock() {
+      try {
+        if (!ac) {
+          ac = new (window.AudioContext || window.webkitAudioContext)();
+          master = ac.createGain(); master.gain.value = muted ? 0 : 0.6; master.connect(ac.destination);
+          noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+          const d = noiseBuf.getChannelData(0);
+          for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        }
+        if (ac.state === 'suspended') ac.resume();
+      } catch (e) { ac = null; }
+    }
+    // one oscillator with a pitch glide and a quick attack / exponential decay
+    function tone({ f0, f1 = f0, dur, type = 'sine', gain = 0.2, delay = 0, attack = 0.005 }) {
+      const t = ac.currentTime + delay, o = ac.createOscillator(), g = ac.createGain();
+      o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(master); o.start(t); o.stop(t + dur + 0.02);
+    }
+    // filtered noise burst (splats, splashes, spray)
+    function noise({ dur, gain = 0.3, freq = 1000, freq1 = freq, filter = 'lowpass', q = 0.8, delay = 0, attack = 0.004 }) {
+      const t = ac.currentTime + delay, s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+      s.buffer = noiseBuf; s.loop = true;
+      f.type = filter; f.Q.value = q; f.frequency.setValueAtTime(freq, t); f.frequency.exponentialRampToValueAtTime(Math.max(20, freq1), t + dur);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      s.connect(f).connect(g).connect(master); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
+    }
+    const SOUNDS = {
+      splat() { noise({ dur: 0.28, gain: 0.5, freq: 1200, freq1: 250 }); tone({ f0: 210, f1: 70, dur: 0.18, gain: 0.35 }); },
+      pee() { noise({ dur: 0.4, gain: 0.35, freq: 2600, freq1: 1200, filter: 'bandpass', q: 1.2 }); for (let i = 0; i < 3; i++) tone({ f0: 500 + i * 120, f1: 900 + i * 150, dur: 0.07, gain: 0.12, delay: 0.05 + i * 0.06 }); },
+      flies() { for (let i = 0; i < 6; i++) tone({ f0: 210 + (i % 2) * 30, f1: 240 - (i % 2) * 30, dur: 0.09, type: 'sawtooth', gain: 0.08, delay: i * 0.07 }); this.splat(); },
+      birdHit() { noise({ dur: 0.18, gain: 0.35, freq: 3000, freq1: 900, filter: 'highpass' }); tone({ f0: 900, f1: 260, dur: 0.16, gain: 0.25 }); },
+      drop(T) { tone({ f0: 1600, f1: 520, dur: T, type: 'triangle', gain: 0.06, attack: 0.05 }); },
+      honk() { for (const f of [370, 466]) tone({ f0: f, dur: 0.38, type: 'square', gain: 0.07, attack: 0.01 }); noise({ dur: 0.25, gain: 0.25, freq: 600, freq1: 200 }); },
+      crash() { noise({ dur: 0.22, gain: 0.4, freq: 1800, freq1: 400 }); for (const [f, d] of [[1250, 0], [1720, 0.04], [2150, 0.09]]) tone({ f0: f, dur: 0.5, type: 'triangle', gain: 0.1, delay: d }); },
+      spray() { noise({ dur: 0.6, gain: 0.4, freq: 900, freq1: 3500, filter: 'bandpass', q: 0.7, attack: 0.03 }); },
+      jump() { tone({ f0: 280, f1: 720, dur: 0.16, type: 'triangle', gain: 0.18 }); },
+      plate() { tone({ f0: 880, dur: 0.5, gain: 0.12 }); tone({ f0: 1318.5, dur: 0.7, gain: 0.1, delay: 0.12 }); },
+      over() { [523.3, 466.2, 392, 311.1].forEach((f, i) => tone({ f0: f, dur: 0.32, type: 'triangle', gain: 0.18, delay: i * 0.17 })); },
+      start() { [523.3, 659.3, 784].forEach((f, i) => tone({ f0: f, dur: 0.25, type: 'triangle', gain: 0.14, delay: i * 0.08 })); }
+    };
+    return {
+      unlock,
+      get muted() { return muted; },
+      toggleMute() {
+        muted = !muted;
+        try { localStorage.setItem('ppd-mute', muted ? '1' : '0'); } catch (e) {}
+        if (master) master.gain.value = muted ? 0 : 0.6;
+        return muted;
+      },
+      play(name, arg) { if (!ac || muted || window.PROMO) return; try { SOUNDS[name](arg); } catch (e) {} }
+    };
+  })();
+  let keys = {}, drag = null, last = 0, spawnT = 0, dogT = 0, birdT = 0, peeT = 0, shownPlace = -1, plate = null;
 
   function reset() {
     resetTrack();
@@ -300,7 +365,7 @@
     const p = PLACES[i];
     $('street').textContent = p.street;
     $('arr').innerHTML = 'PARIS<br>' + p.arr + ' Arr<sup>t</sup>';
-    if (state === 'play') plate = { text: p.name, ko: p.ko, life: 2.6 };
+    if (state === 'play') { plate = { text: p.name, ko: p.ko, life: 2.6 }; sfx.play('plate'); }
   }
 
   // ---------- spawning ----------
@@ -385,6 +450,7 @@
     const z = PZ() + speed * T, seg = segAt(z);
     const x = Math.max(-seg.w + 0.12, Math.min(seg.w - 0.12, playerX + (Math.random() - 0.5) * 0.35));
     drops.push({ sx: b.x, sy: b.y, z, x, t: 0, T, r: 0.2 });
+    sfx.play('drop', T); // falling whistle: a heads-up that something is coming down
   }
   const CAR_COLORS = ['#c8372d', '#e8e4d8', '#2f5d46', '#1d3b6e', '#d9a441', '#6b6f78'];
   // Irregular traffic: usually a long quiet gap, sometimes a car right behind another,
@@ -400,7 +466,8 @@
     return { lane, dir, x: x ?? -dir * 6, v: 2.8 + Math.random() * 1.2 + Math.min(dist * 0.004, 1.5), len: 1.9 + Math.random() * 0.4, color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)] };
   }
 
-  function takeHit(label, color) {
+  function takeHit(label, color, sound) {
+    sfx.play(sound);
     lives--; invuln = 1.4; shake = reduceMotion ? 0 : 0.35; flash = { color, t: 0.35 };
     texts.push({ text: label, life: 1.1, dy: 0 });
     updateHud();
@@ -409,6 +476,7 @@
   }
 
   function start() {
+    sfx.unlock(); sfx.play('start');
     reset();
     state = 'play';
     $('startScreen').hidden = true; $('overScreen').hidden = true; $('pauseBtn').hidden = false;
@@ -434,6 +502,7 @@
   function gameOver() {
     state = 'over';
     $('pauseBtn').hidden = true;
+    sfx.play('over');
     const d = Math.floor(dist), p = PLACES[placeAt(dist)], sc = Math.floor(score);
     let msg = `${p.ko} 근처에서 구두가 다 망가졌습니다. `;
     if (d < 100) msg += '파리지앵이 되려면 아직 멀었어요.';
@@ -592,7 +661,7 @@
       if (d.t < d.T) continue;
       drops.splice(i, 1);
       if (invuln <= 0 && Math.abs(d.x - playerX) < d.r + 0.05 && Math.abs(d.z - pz) < 600) {
-        if (takeHit('새똥 명중!', 'rgba(244,242,234,0.6)')) return;
+        if (takeHit('새똥 명중!', 'rgba(244,242,234,0.6)', 'birdHit')) return;
       } else stains.push({ z: d.z, x: d.x, seed: Math.random() * 10 });
     }
 
@@ -604,7 +673,8 @@
         if (Math.abs(p.x - playerX) < hitRadius(p) + 0.07) {
           poops.splice(poops.indexOf(p), 1);
           const label = p.kind === 'pee' ? '첨벙! 오줌이잖아!' : p.flies > 0.5 ? '윙윙~ 파리 떼!' : '으악, 밟았다!';
-          if (takeHit(label, p.kind === 'pee' ? 'rgba(232,200,74,0.45)' : 'rgba(107,68,35,0.45)')) return;
+          const sound = p.kind === 'pee' ? 'pee' : p.flies > 0.5 ? 'flies' : 'splat';
+          if (takeHit(label, p.kind === 'pee' ? 'rgba(232,200,74,0.45)' : 'rgba(107,68,35,0.45)', sound)) return;
           break;
         }
       }
@@ -617,7 +687,7 @@
         if (!s || !s.terrace || i % 2) continue;
         if (Math.abs(terraceZ(s) - pz) > reach + 60) continue;
         if (Math.abs(playerX - terraceX(s)) < TERRACE_HALF + 0.06) {
-          if (takeHit('Attention! 테라스!', 'rgba(140,42,42,0.35)')) return;
+          if (takeHit('Attention! 테라스!', 'rgba(140,42,42,0.35)', 'crash')) return;
           break;
         }
       }
@@ -626,7 +696,7 @@
     if (invuln <= 0) {
       for (const tr of trucks) {
         if (playerX < -pseg.w + wetReach(tr, pz)) {
-          if (takeHit('살수차 물벼락!', 'rgba(111,160,200,0.45)')) return;
+          if (takeHit('살수차 물벼락!', 'rgba(111,160,200,0.45)', 'spray')) return;
           break;
         }
       }
@@ -636,7 +706,7 @@
         for (const car of c.cars) {
           if (Math.abs(c.lanes[car.lane] - pz) > 260) continue;
           if (Math.abs(car.x - playerX) < car.len / 2 + 0.06) {
-            if (takeHit('빵빵! 차 조심!', 'rgba(200,55,45,0.4)')) return;
+            if (takeHit('빵빵! 차 조심!', 'rgba(200,55,45,0.4)', 'honk')) return;
             break outer;
           }
         }
@@ -1422,6 +1492,7 @@
     if (!$('boardScreen').hidden || !$('profileScreen').hidden) { if (e.key === 'Escape') closePanels(); return; }
     if ((e.key === 'p' || e.key === 'P' || e.key === 'Escape') && (state === 'play' || state === 'paused')) { e.preventDefault(); if (!e.repeat) togglePause(); return; }
     if (state === 'paused') return;
+    if ((e.key === 'm' || e.key === 'M') && !e.repeat) { toggleSound(); return; }
     if (e.key === ' ' && state === 'play') { e.preventDefault(); if (!e.repeat) jump(); return; }
     if (keyMap[e.key]) { keys[keyMap[e.key]] = true; drag = null; e.preventDefault(); }
     if ((e.key === ' ' || e.key === 'Enter') && state !== 'play' && document.activeElement?.tagName !== 'BUTTON') { e.preventDefault(); start(); }
@@ -1630,6 +1701,16 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play') togglePause(); });
   $('pauseBtn').addEventListener('mousedown', e => e.preventDefault()); // keep focus off so Space isn't doubled
   $('pauseBtn').addEventListener('click', togglePause);
+
+  // sound on/off (remembered in this browser)
+  function showSoundState() {
+    $('soundBtn').textContent = sfx.muted ? '🔇' : '🔊';
+    $('soundBtn').setAttribute('aria-label', sfx.muted ? '소리 켜기' : '소리 끄기');
+  }
+  function toggleSound() { sfx.unlock(); sfx.toggleMute(); showSoundState(); sfx.play('plate'); }
+  $('soundBtn').addEventListener('mousedown', e => e.preventDefault());
+  $('soundBtn').addEventListener('click', toggleSound);
+  showSoundState();
 
   // idle scene: the first stretch toward the Eiffel Tower with every hazard on show
   reset();
