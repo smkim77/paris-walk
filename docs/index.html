@@ -379,7 +379,7 @@
       },
       // bumped a cyclist: a bump, then a grumbling voice (a gruff, falling "oh la la..." mutter)
       grumble() {
-        noise({ dur: 0.15, gain: 0.1, freq: 700, freq1: 200 });
+        noise({ dur: 0.15, gain: 0.05, freq: 700, freq1: 200 });
         const t0 = ac.currentTime + 0.1, o = track(ac.createOscillator()), rough = track(ac.createOscillator()), rd = ac.createGain();
         const f1 = ac.createBiquadFilter(), f2 = ac.createBiquadFilter(), g = ac.createGain();
         o.type = 'sawtooth'; rough.frequency.value = 31; rd.gain.value = 7; rough.connect(rd).connect(o.frequency); // a bit of growl
@@ -392,7 +392,7 @@
           const [a, b] = VOWELS[[3, 0, 5, 4, 1][Math.floor(Math.random() * 5)]], dur = k === n - 1 ? 0.34 : 0.1 + Math.random() * 0.1;
           o.frequency.setTargetAtTime(base * (1.2 - 0.45 * k / n) * (0.94 + Math.random() * 0.12), t, 0.03);
           f1.frequency.setTargetAtTime(a, t, 0.02); f2.frequency.setTargetAtTime(b, t, 0.02);
-          g.gain.setTargetAtTime(0.25, t, 0.015); g.gain.setTargetAtTime(0.02, t + dur * 0.75, 0.025);
+          g.gain.setTargetAtTime(0.125, t, 0.015); g.gain.setTargetAtTime(0.01, t + dur * 0.75, 0.025);
           t += dur;
         }
         g.gain.setTargetAtTime(0, t, 0.04);
