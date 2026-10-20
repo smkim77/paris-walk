@@ -194,24 +194,56 @@
   // ---------- track generation ----------
   let segs = [], gen = null, crossings = [];
   const ease = t => t * t * (3 - 2 * t);
-  function resetTrack() { segs = []; crossings = []; gen = { w: 1, nextCross: 70, lastTerrace: -999 }; }
+  // side: +1 = street on the left and buildings on the right, -1 = the mirror image. It flips only
+  // across a crossing at the end of a "change of scene" (a Seine bridge, an open square or a wide
+  // boulevard), so the new street simply starts the other way round.
+  function resetTrack() { segs = []; crossings = []; gen = { w: 1, nextCross: 70, lastTerrace: -999, side: 1, kind: 'street', nextScene: 200, cn: 5, flipX: false, k: 0, feature: null }; }
   // sidewalk width relative to the obstacles (1.2 = 20% wider than the original layout)
   const SIDEWALK = 1.2;
   function pushSeg(curve, w, crossing, k = -1, terrace = false) {
-    const i = segs.length, bld = Math.floor(i / 7);
+    const i = segs.length, bld = Math.floor(i / 7), kind = crossing ? 'crossing' : gen.kind, street = kind === 'street';
     segs.push({
-      i, curve, w: w * SIDEWALK, crossing, ck: k, bld, shop: bld % 3 !== 1, terrace,
-      tree: !crossing && i % 5 === 0, lamp: !crossing && i % 9 === 4, morris: !crossing && i % 53 === 31
+      i, curve, w: w * SIDEWALK, crossing, ck: k, cn: gen.cn, flipX: crossing && gen.flipX, side: gen.side, kind, k: gen.k++,
+      bld, shop: bld % 3 !== 1, terrace, feature: kind === 'square' && gen.k === 17 ? gen.feature : null,
+      tree: (street || kind === 'square') && i % 5 === 0, lamp: (street || kind === 'square') && i % 9 === 4, morris: street && i % 53 === 31
     });
   }
-  function addCrossing() {
+  // n = 5: an ordinary side street (one lane each way); n = 9: a wide boulevard (two lanes each way).
+  // flip: the street we walk along ends here and the next one is laid out the other way round
+  function addCrossing(n = 5, flip = false) {
     const start = segs.length;
-    for (let k = 0; k < 5; k++) pushSeg(0, gen.w, true, k);
-    crossings.push({ z0: start * SEG_LEN, z1: (start + 5) * SEG_LEN, lanes: [(start + 1.6) * SEG_LEN, (start + 3.4) * SEG_LEN], cars: [], spawn: [0.2, 0.8], primed: false });
+    gen.cn = n; gen.flipX = flip;
+    for (let k = 0; k < n; k++) pushSeg(0, gen.w, true, k);
+    gen.cn = 5; gen.flipX = false;
+    if (flip) gen.side = -gen.side;
+    const lanes = n === 5 ? [1.6, 3.4] : [1.6, 3.2, 5.8, 7.4];
+    crossings.push({ z0: start * SEG_LEN, z1: (start + n) * SEG_LEN, lanes: lanes.map(l => (start + l) * SEG_LEN),
+      dirs: n === 5 ? [1, -1] : [1, 1, -1, -1], cars: [], spawn: lanes.map((_, j) => 0.2 + j * 0.6), primed: false });
+  }
+  // change of scene, then the flip: a Seine bridge, an open square with a fountain or an obelisk,
+  // or straight onto a wide boulevard crossing
+  function addScene() {
+    const r = Math.random(), scene = r < 0.4 ? 'bridge' : r < 0.75 ? 'square' : 'boulevard';
+    const w0 = gen.w;
+    for (let i = 0; i < 6; i++) pushSeg(0, w0 + (1 - w0) * ease((i + 1) / 6), false);   // straighten out to full width
+    gen.w = 1;
+    if (scene !== 'boulevard') {
+      gen.kind = scene; gen.k = 0; gen.feature = Math.random() < 0.5 ? 'fountain' : 'obelisk';
+      for (let i = 0, n = scene === 'bridge' ? 38 : 34; i < n; i++) pushSeg(0, 1, false);
+      gen.kind = 'street';
+    }
+    addCrossing(scene === 'boulevard' ? 9 : 5, true);
   }
   function genMore(n) {
     while (segs.length < n) {
       const m = segs.length * M_PER_SEG;
+      // around each new landmark stretch (every 220 m), more often than not the scene changes
+      // (always the first time, so a short walk still gets to see one)
+      if (m >= gen.nextScene) {
+        const first = gen.nextScene === 200;
+        gen.nextScene += 220;
+        if (first || Math.random() < 0.65) { addScene(); gen.nextCross = Math.max(gen.nextCross, segs.length * M_PER_SEG + 70); continue; }
+      }
       if (m >= gen.nextCross) { addCrossing(); gen.nextCross = m + 150 + Math.random() * 70; continue; }
       const early = segs.length < 40;
       const len = 10 + Math.floor(Math.random() * 18);
@@ -265,6 +297,7 @@
   let edgeT = 0, edgeSide = 0, cleanT = 0; // how long the walker has hugged one edge; street-cleaner timer
   // pace: the walker's own speed setting, from a slow stroll (0.6×) to a hurry (1.4×)
   const PACE_MIN = 0.6, PACE_MAX = 1.4;
+  const SPEED0 = 1050; // forward speed at the start, at normal pace: an easy walk that picks up with distance
   let pace = 1;
   // jump: Space hops over poop and pee for a moment; another jump only after the cooldown
   const JUMP_TIME = 0.55, JUMP_COOLDOWN = 1;
@@ -549,7 +582,7 @@
 
   function reset() {
     resetTrack();
-    position = 0; speed = 1500; pace = 1; jumpT = 0; jumpCd = 0; dist = 0; lives = 3; invuln = 0; playerX = 0; step = 0; skyOffset = 0; shake = 0; flash = null;
+    position = 0; speed = SPEED0; pace = 1; jumpT = 0; jumpCd = 0; dist = 0; lives = 3; invuln = 0; playerX = 0; step = 0; skyOffset = 0; shake = 0; flash = null;
     poops = []; dogs = []; peers = []; birds = []; drops = []; stains = []; texts = []; trucks = [];
     cyclists = []; cycT = 0;
     edgeT = 0; edgeSide = 0; cleanT = 14; score = 0; slowT = 0; slowWarned = false; runMs = 0;
@@ -596,6 +629,7 @@
     const z = PZ() + 3500 + Math.random() * 5000;
     if (nearCrossing(z)) return;
     const seg = segAt(z), dir = Math.random() < 0.5 ? 1 : -1;
+    if (seg.kind === 'bridge') return; // no dogs coming out of the river
     const kinds = ['trot', 'zigzag', 'sniff', 'sniff', 'dash', 'turnback', 'diagonal'];
     const kind = kinds[Math.floor(Math.random() * kinds.length)];
     dogs.push({
@@ -614,7 +648,7 @@
     if (nearCrossing(z)) return false;
     const seg = segAt(z);
     let side = ambushSide || (Math.random() < 0.5 ? -1 : 1);
-    if (side > 0 && seg.terrace) { if (ambushSide) return false; side = -1; } // no room against a café terrace
+    if (side === seg.side && seg.terrace) { if (ambushSide) return false; side = -side; } // no room against a café terrace
     peers.push({
       z, side, x: side * (seg.w - 0.1), t: 0, T: ambushSide ? 0.3 : 1.6 + Math.random() * 0.6, done: false, leave: 0, bob: Math.random() * 6,
       coat: ['#4a5568', '#5b4636', '#2f5d46', '#6b3a4a'][Math.floor(Math.random() * 4)]
@@ -623,7 +657,10 @@
   }
   // Paris street-cleaning truck: drives slowly up the street, hosing the curb-side edge of the sidewalk
   function spawnCleaner() {
-    trucks.push({ z: PZ() + 9000 + Math.random() * 3000, v: 450 + Math.random() * 150, t: 0 });
+    // only where the street keeps the same side for as long as the truck will be in view
+    const z = PZ() + 9000 + Math.random() * 3000, side = segAt(z).side;
+    for (let d = 0; d <= 16000; d += 600) { const sg = segAt(z + d); if (sg.side !== side || sg.flipX) return; }
+    trucks.push({ z, v: 450 + Math.random() * 150, t: 0 });
   }
   const SPRAY_LEN = 650, SPRAY_REACH = 0.42; // spray covers ±650 units around the truck, up to 0.42 road units in from the curb
   // how far the wet patch reaches in from the curb at world z: widest beside the truck, tapering
@@ -638,7 +675,7 @@
   // café table + two bistro chairs on every other terrace segment
   const TERRACE_HALF = 0.2;
   const terraceZ = s => (s.i + 0.5) * SEG_LEN;
-  const terraceX = s => s.w - 0.22;
+  const terraceX = s => s.side * (s.w - 0.22);
   function spawnBird() {
     const fromLeft = Math.random() < 0.5;
     birds.push({
@@ -668,8 +705,7 @@
   const BIKE_COLORS = ['#8fc4a4', '#3f6fb0', '#c8372d', '#2a2c30', '#d9a441'];   // the mint one is a Vélib'
   const RIDER_COATS = ['#2f5d46', '#1d3b6e', '#8c2a2a', '#d9a441', '#4a4f57', '#e8e4d8', '#7a5a8c'];
   const RIDER_HEADS = ['#3a2a1e', '#1b1e24', '#c9a066', '#7a4a2a', 'helmet', 'beret'];
-  function makeCar(lane, x) {
-    const dir = lane === 0 ? 1 : -1;
+  function makeCar(lane, dir, x) {
     // about a third of the crossing traffic is bikes: slower and narrower, but just as painful
     if (Math.random() < 0.33) return { lane, dir, bike: true, x: x ?? -dir * 6, v: 1.7 + Math.random() * 0.7 + Math.min(dist * 0.002, 0.8), len: 0.65, color: pick(BIKE_COLORS), coat: pick(RIDER_COATS), head: pick(RIDER_HEADS), ph: Math.random() * 6 };
     return { lane, dir, x: x ?? -dir * 6, v: 2.8 + Math.random() * 1.2 + Math.min(dist * 0.004, 1.5), len: 1.9 + Math.random() * 0.4, color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)] };
@@ -680,8 +716,9 @@
   function spawnCyclist() {
     const toward = Math.random() < 0.4, far = position + (DRAW - 6) * SEG_LEN, r = Math.random();
     const base = r < 0.35 ? 900 + Math.random() * 1300 : r < 0.8 ? 2400 + Math.random() * 1600 : 4400 + Math.random() * 2000;
-    const v = toward ? -base * 0.75 : base;
-    cyclists.push({ z: toward || v < speed ? far : position - 300, v, lane: toward ? 1.95 : 1.45, toward,
+    const v = toward ? -base * 0.75 : base, z = toward || v < speed ? far : position - 300, seg = segAt(z);
+    if (seg.flipX) return;
+    cyclists.push({ z, v, side: seg.side, lane: toward ? 1.95 : 1.45, toward,
       ph: Math.random() * 6, color: pick(BIKE_COLORS), coat: pick(RIDER_COATS), head: pick(RIDER_HEADS), basket: Math.random() < 0.35 });
   }
 
@@ -782,7 +819,7 @@
     if (paceDir) pace += paceDir * 0.8 * dt;
     if (drag && drag.moved) pace = drag.pace0 - (drag.curY - drag.y0) / (H * 0.4) * (PACE_MAX - PACE_MIN);
     pace = Math.max(PACE_MIN, Math.min(PACE_MAX, pace));
-    speed = (1500 + Math.min(dist * 4, 2200)) * pace;
+    speed = (SPEED0 + Math.min(dist * 4.5, 3700 - SPEED0)) * pace;
     score += speed * dt / UNITS_PER_M * scoreMult(pace);
     position += speed * dt;
     dist = position / UNITS_PER_M;
@@ -845,14 +882,14 @@
       if (c.z1 < position || c.z0 - position > DRAW * SEG_LEN) continue;
       if (!c.primed) {
         c.primed = true;
-        for (let lane = 0; lane < 2; lane++) {
-          if (Math.random() < 0.5) c.cars.push(makeCar(lane, (Math.random() * 2 - 1) * 5));
+        for (let lane = 0; lane < c.lanes.length; lane++) {
+          if (Math.random() < 0.5) c.cars.push(makeCar(lane, c.dirs[lane], (Math.random() * 2 - 1) * 5));
           c.spawn[lane] = Math.random() * 3;
         }
       }
-      for (let lane = 0; lane < 2; lane++) {
+      for (let lane = 0; lane < c.lanes.length; lane++) {
         c.spawn[lane] -= dt;
-        if (c.spawn[lane] <= 0) { c.cars.push(makeCar(lane)); c.spawn[lane] = nextCarGap(); }
+        if (c.spawn[lane] <= 0) { c.cars.push(makeCar(lane, c.dirs[lane])); c.spawn[lane] = nextCarGap() * (c.lanes.length > 2 ? 1.3 : 1); }
       }
       for (const car of c.cars) { car.x += car.dir * car.v * dt; if (car.bike) car.ph += car.v * dt * 4; }
       c.cars = c.cars.filter(car => Math.abs(car.x) < 7);
@@ -947,7 +984,7 @@
     // the street cleaner's spray along the curb
     if (invuln <= 0) {
       for (const tr of trucks) {
-        if (playerX < -pseg.w + wetReach(tr, pz)) {
+        if (pseg.side * playerX < -pseg.w + wetReach(tr, pz)) {
           if (takeHit('살수차 물벼락!', 'rgba(111,160,200,0.45)', 'spray')) return;
           break;
         }
@@ -972,7 +1009,7 @@
     dogs = dogs.filter(d => d.z > position + 100 && Math.abs(d.x) < 2.6);
     peers = peers.filter(s => s.z > position + 100 && s.leave < 2.5);
     trucks = trucks.filter(tr => tr.z > position - SPRAY_LEN && tr.z < position + DRAW * SEG_LEN);
-    cyclists = cyclists.filter(c => c.z > position - 400 && c.z < position + DRAW * SEG_LEN);
+    cyclists = cyclists.filter(c => c.z > position - 400 && c.z < position + DRAW * SEG_LEN && segAt(c.z).side === c.side);
     birds = birds.filter(b => b.x > -60 && b.x < W + 60);
     texts = texts.filter(t => t.life > 0);
 
@@ -1040,9 +1077,13 @@
     };
     for (const row of rows) {
       const s = row.seg, zc = row.zs + SEG_LEN * 0.5;
-      if (s.tree) add(zc, () => drawTree(toScreen(zc, -s.w * 1.13)));
-      if (s.lamp) add(zc + 1, () => drawLamp(toScreen(zc + 1, -s.w * 1.06)));
-      if (s.morris) add(zc + 2, () => drawMorris(toScreen(zc + 2, -s.w * 1.2)));
+      const S = s.side;
+      if (s.tree) add(zc, () => drawTree(toScreen(zc, -S * s.w * 1.13)));
+      if (s.lamp) add(zc + 1, () => drawLamp(toScreen(zc + 1, -S * s.w * 1.06)));
+      if (s.morris) add(zc + 2, () => drawMorris(toScreen(zc + 2, -S * s.w * 1.2)));
+      // bridge lamps on both parapets; the square's fountain or obelisk out in the open
+      if (s.kind === 'bridge' && s.k % 8 === 4) for (const u of [1.08, -BRIDGE_ROAD]) add(zc + 3, () => drawLamp(toScreen(zc + 3, S * s.w * u)));
+      if (s.feature) add(zc, () => (s.feature === 'fountain' ? drawFountain : drawObelisk)(toScreen(zc, S * s.w * 3.2)));
       if (s.terrace && s.i % 2 === 0) add(terraceZ(s), () => drawTerrace(toScreen(terraceZ(s), terraceX(s)), s.i));
     }
     for (const tr of trucks) add(tr.z, () => drawCleaner(tr));
@@ -1100,24 +1141,37 @@
   function drawSegment(row) {
     const { seg, a, b } = row;
     if (b.y >= a.y || a.y < HORIZON) return;
-    // point on this segment: f = 0 near … 1 far, u = lateral (±1 sidewalk edge), h = height
+    // point on this segment: f = 0 near … 1 far, u = lateral (±1 sidewalk edge; negative = street side,
+    // positive = building side, mirrored where the layout is flipped), h = height
+    const S = seg.side;
     const P = (f, u, h = 0) => {
       const s = a.s + (b.s - a.s) * f, w = a.w + (b.w - a.w) * f;
-      return [a.x + (b.x - a.x) * f + w * u, a.y + (b.y - a.y) * f - s * h * K];
+      return [a.x + (b.x - a.x) * f + w * u * S, a.y + (b.y - a.y) * f - s * h * K];
     };
     const quad = (color, f0, f1, u0, u1, h0 = 0, h1 = h0) =>
       poly(color, [P(f0, u0, h0), P(f1, u0, h0 === h1 ? h0 : h0), P(f1, u1, h1), P(f0, u1, h1)]);
     const wallQ = (color, f0, f1, u, h0, h1) => poly(color, [P(f0, u, h0), P(f1, u, h0), P(f1, u, h1), P(f0, u, h1)]);
 
-    // lane dashes on the street to the left give a sense of speed
-    if (seg.i % 4 < 2) quad('rgba(235,232,220,0.55)', 0, 1, -2.35, -2.25);
+    // river under a bridge, both sides (beyond the far parapet of the road, and beyond our own)
+    if (seg.kind === 'bridge') {
+      const ripple = seg.i % 3 ? '#5b8297' : '#668ea2';
+      quad(ripple, 0, 1, 1.08, 30); quad(ripple, 0, 1, -BRIDGE_ROAD, -30);
+    }
+    // lane dashes on the street to the left give a sense of speed (not across a junction where the street ends)
+    if (seg.i % 4 < 2 && !seg.flipX) quad('rgba(235,232,220,0.55)', 0, 1, -2.35, -2.25);
 
     if (seg.crossing) {
-      // zebra stripes run along the walking direction; curb lips at both ends
-      if (seg.ck >= 1 && seg.ck <= 3) for (let j = 0; j < 7; j++) { const u0 = -0.93 + j * 0.27; quad('#ecebe4', 0, 1, u0, u0 + 0.15); }
-      if (seg.ck === 2) for (const side of [-1, 1]) for (let u = 1.3; u < 7; u += 0.9) quad('rgba(235,232,220,0.6)', 0.42, 0.58, side * u, side * (u + 0.45));
+      // zebra stripes run along the walking direction; curb lips at both ends; a wide boulevard
+      // gets a solid centre line between its two directions
+      const last = seg.cn - 1, mid = last >> 1;
+      if (seg.ck >= 1 && seg.ck < last) for (let j = 0; j < 7; j++) { const u0 = -0.93 + j * 0.27; quad('#ecebe4', 0, 1, u0, u0 + 0.15); }
+      if (seg.ck === mid && seg.cn === 5) for (const side of [-1, 1]) for (let u = 1.3; u < 7; u += 0.9) quad('rgba(235,232,220,0.6)', 0.42, 0.58, side * u, side * (u + 0.45));
+      if (seg.cn > 5) {
+        if (seg.ck === mid) for (const side of [-1, 1]) quad('rgba(235,232,220,0.7)', 0.4, 0.6, side * 1.2, side * 9);
+        if (seg.ck === 2 || seg.ck === last - 2) for (const side of [-1, 1]) for (let u = 1.3; u < 9; u += 0.9) quad('rgba(235,232,220,0.55)', 0.9, 1, side * u, side * (u + 0.45));
+      }
       if (seg.ck === 0) quad('#9d968b', 0.8, 1, -1, 1);
-      if (seg.ck === 4) quad('#9d968b', 0, 0.2, -1, 1);
+      if (seg.ck === last) quad('#9d968b', 0, 0.2, -1, 1);
       return;
     }
     quad('#6f8aa3', 0, 1, -1.1, -1.06);                                   // gutter water
@@ -1137,6 +1191,22 @@
     }
     quad('rgba(120,108,92,0.35)', 0, 1, -0.34, -0.33);
     quad('rgba(120,108,92,0.35)', 0, 1, 0.33, 0.34);
+    if (seg.kind === 'bridge') {
+      // stone parapets: ours at the edge of the walk, the far one beyond the road; piers at both ends
+      quad('#b9ae9c', 0, 1, 1, 1.08);
+      wallQ('#d6ccba', 0, 1, 1.08, 0, 330); wallQ('#c4b8a4', 0, 1, 1.08, 330, 380);
+      wallQ('#d6ccba', 0, 1, -BRIDGE_ROAD, 0, 330); wallQ('#c4b8a4', 0, 1, -BRIDGE_ROAD, 330, 380);
+      if (seg.k % 6 === 0) for (const u of [1.08, -BRIDGE_ROAD]) wallQ('#b3a68f', 0, 0.25, u, 0, 520);
+      if (seg.k === 0 || seg.k === 37) for (const u of [1.08, -BRIDGE_ROAD]) wallQ('#a89a82', 0, 1, u, 0, 760);
+      return;
+    }
+    if (seg.kind === 'square') {
+      // open square paved in pale stone where the buildings would be, with a pattern of joints
+      quad('#d9d0c0', 0, 1, 1, 40);
+      if (seg.k % 4 === 0) quad('rgba(140,128,110,0.3)', 0, 0.06, 1, 40);
+      for (const u of [3, 8]) quad('rgba(140,128,110,0.3)', 0, 1, u, u + 0.04);
+      return;
+    }
     quad('#a59b8c', 0, 1, 1, 1.04);                                       // foot of the wall
 
     // Haussmann facade: stone wall, shopfront, iron balconies, windows, zinc mansard roof
@@ -1300,6 +1370,40 @@
   }
 
   // ---------- street furniture ----------
+  const BRIDGE_ROAD = 3.6; // the far parapet of a bridge, beyond the roadway
+  // fountain in the middle of a square: stone basin, two tiers, water spilling over
+  function drawFountain(p) {
+    if (!p) return;
+    const k = p.k;
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, 900 * k, 900 * k * p.flat, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#bfb39f'; ctx.fillRect(p.x - 850 * k, p.y - 260 * k, 1700 * k, 260 * k);
+    ctx.fillStyle = '#6f9ab3'; ctx.beginPath(); ctx.ellipse(p.x, p.y - 260 * k, 850 * k, 120 * k, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#a99c86'; ctx.fillRect(p.x - 70 * k, p.y - 1100 * k, 140 * k, 850 * k);
+    for (const [y, r] of [[700, 420], [1100, 230]]) {
+      ctx.fillStyle = '#c9bea9'; ctx.beginPath(); ctx.ellipse(p.x, p.y - y * k, r * k, r * 0.28 * k, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(214,232,244,0.75)'; ctx.lineWidth = Math.max(1, 18 * k);
+      for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(p.x + sd * r * k, p.y - y * k); ctx.quadraticCurveTo(p.x + sd * r * 1.25 * k, p.y - (y - 150) * k, p.x + sd * r * 1.3 * k, p.y - (y - 380) * k); ctx.stroke(); }
+    }
+    ctx.strokeStyle = 'rgba(230,242,250,0.85)'; ctx.lineWidth = Math.max(1, 26 * k);
+    ctx.beginPath(); ctx.moveTo(p.x, p.y - 1100 * k); ctx.lineTo(p.x, p.y - (1500 + Math.sin(step * 0.7) * 40) * k); ctx.stroke();
+  }
+  // the Luxor obelisk of Place de la Concorde: pink granite needle with a gilded tip
+  function drawObelisk(p) {
+    if (!p) return;
+    const k = p.k;
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, 600 * k, 600 * k * p.flat, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#9a8e7c'; ctx.fillRect(p.x - 420 * k, p.y - 300 * k, 840 * k, 300 * k);
+    ctx.fillStyle = '#b3a690'; ctx.fillRect(p.x - 300 * k, p.y - 1100 * k, 600 * k, 800 * k);
+    ctx.fillStyle = '#c99a86';
+    ctx.beginPath(); ctx.moveTo(p.x - 190 * k, p.y - 1100 * k); ctx.lineTo(p.x + 190 * k, p.y - 1100 * k);
+    ctx.lineTo(p.x + 120 * k, p.y - 5200 * k); ctx.lineTo(p.x, p.y - 5550 * k); ctx.lineTo(p.x - 120 * k, p.y - 5200 * k); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#e2b84a';
+    ctx.beginPath(); ctx.moveTo(p.x - 120 * k, p.y - 5200 * k); ctx.lineTo(p.x + 120 * k, p.y - 5200 * k); ctx.lineTo(p.x, p.y - 5550 * k); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(110,80,70,0.35)';
+    for (let j = 0; j < 6; j++) ctx.fillRect(p.x - 40 * k, p.y - (1500 + j * 600) * k, 80 * k, 300 * k);
+  }
   function drawTree(p) {
     if (!p) return;
     const k = p.k;
@@ -1514,7 +1618,8 @@
 
   // green Paris street-cleaning truck seen from behind, hosing the sidewalk edge
   function drawCleaner(tr) {
-    const p = toScreen(tr.z, -1.75);
+    const seg = segAt(tr.z), S = seg.side;
+    const p = toScreen(tr.z, -1.75 * S);
     if (!p) return;
     const k = p.k, w = 0.85 * ROAD_W * k, h = 1050 * k;
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
@@ -1540,14 +1645,13 @@
     }
     // water fans out from a side nozzle as streams of droplets that break up as they fly,
     // with a misty splash where they hit the pavement
-    const seg = segAt(tr.z);
-    const sx = p.x + w * 0.5, sy = p.y - 330 * k;
+    const sx = p.x + S * w * 0.5, sy = p.y - 330 * k;
     ctx.fillStyle = 'rgba(160,185,205,0.9)';
-    ctx.fillRect(sx - 10 * k, sy - 25 * k, 70 * k, 50 * k);
+    ctx.fillRect(sx - 10 * k - (S < 0 ? 50 * k : 0), sy - 25 * k, 70 * k, 50 * k);
     for (let j = 0; j < 5; j++) {
       const dz = (j - 2) * SPRAY_LEN * 0.35, wob = reduceMotion ? 0 : Math.sin(tr.t * 9 + j) * 0.04;
       const zj = tr.z + dz;
-      const g = toScreen(zj, -seg.w + wetReach(tr, zj) * 0.7 + wob);
+      const g = toScreen(zj, S * (-seg.w + wetReach(tr, zj) * 0.7 + wob));
       if (!g) continue;
       const cx = (sx + g.x) / 2, cy = Math.min(sy, g.y) - 90 * k;
       const at = u => [(1 - u) * (1 - u) * sx + 2 * (1 - u) * u * cx + u * u * g.x, (1 - u) * (1 - u) * sy + 2 * (1 - u) * u * cy + u * u * g.y];
@@ -1636,10 +1740,12 @@
   }
   // cyclist on the street beside the sidewalk, seen from the front (oncoming) or from behind
   function drawCyclist(c) {
-    const p = toScreen(c.z, -segAt(c.z).w * c.lane);
+    const seg = segAt(c.z);
+    const p = toScreen(c.z, -c.side * seg.w * c.lane);
     if (!p) return;
     const Hh = 470 * p.k, lw = Math.max(1, Hh * 0.05), pedal = Math.sin(c.ph);
     ctx.save(); ctx.translate(p.x, p.y); ctx.lineCap = 'round';
+    if (seg.flipX) ctx.globalAlpha = Math.max(0, 1 - (seg.ck + 1) / seg.cn); // turning off where the street ends
     ctx.fillStyle = 'rgba(0,0,0,0.2)';
     ctx.beginPath(); ctx.ellipse(0, 0, Hh * 0.14, Hh * 0.14 * p.flat, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#1b1e24'; ctx.fillRect(-Hh * 0.025, -Hh * 0.4, Hh * 0.05, Hh * 0.4);   // tyre, end-on
@@ -1778,7 +1884,7 @@
     const t = (pace - PACE_MIN) / (PACE_MAX - PACE_MIN);
     // shown as a believable walking speed: 4.5 km/h at the starting pace, gently compressed so the
     // game's speed-up reads as a brisk walk to a jog (about 3–10 km/h) rather than a car's speed
-    const kmh = 4.5 * Math.pow(speed / 1500, 0.6);
+    const kmh = 4.5 * Math.pow(speed / SPEED0, 0.5);
     ctx.fillStyle = 'rgba(27,30,36,0.72)';
     ctx.beginPath(); ctx.roundRect(x - 6, y - 46, w + 12, h + 54, 6); ctx.fill();
     ctx.textAlign = 'left'; ctx.fillStyle = '#f2d27a';
