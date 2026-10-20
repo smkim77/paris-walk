@@ -327,7 +327,14 @@
       flies() { for (let i = 0; i < 6; i++) tone({ f0: 210 + (i % 2) * 30, f1: 240 - (i % 2) * 30, dur: 0.09, type: 'sawtooth', gain: 0.08, delay: i * 0.07 }); this.splat(); },
       birdHit() { noise({ dur: 0.18, gain: 0.35, freq: 3000, freq1: 900, filter: 'highpass' }); tone({ f0: 900, f1: 260, dur: 0.16, gain: 0.25 }); },
       drop(T) { tone({ f0: 1600, f1: 520, dur: T, type: 'triangle', gain: 0.06, attack: 0.05 }); },
-      honk() { for (const f of [370, 466]) tone({ f0: f, dur: 0.38, type: 'square', gain: 0.07, attack: 0.01 }); noise({ dur: 0.25, gain: 0.25, freq: 600, freq1: 200 }); },
+      // car horn "빵빵": two short blasts of a brassy two-tone horn, plus the bump
+      honk() {
+        noise({ dur: 0.2, gain: 0.35, freq: 500, freq1: 150 });
+        for (const d of [0, 0.24]) for (const f of [415, 523]) {
+          tone({ f0: f, dur: d ? 0.22 : 0.17, type: 'sawtooth', gain: 0.09, attack: 0.008, delay: d });
+          tone({ f0: f * 2, dur: d ? 0.22 : 0.17, type: 'square', gain: 0.025, attack: 0.008, delay: d });
+        }
+      },
       crash() { noise({ dur: 0.22, gain: 0.4, freq: 1800, freq1: 400 }); for (const [f, d] of [[1250, 0], [1720, 0.04], [2150, 0.09]]) tone({ f0: f, dur: 0.5, type: 'triangle', gain: 0.1, delay: d }); },
       spray() { noise({ dur: 0.6, gain: 0.4, freq: 900, freq1: 3500, filter: 'bandpass', q: 0.7, attack: 0.03 }); },
       jump() { tone({ f0: 280, f1: 720, dur: 0.16, type: 'triangle', gain: 0.18 }); },
@@ -415,15 +422,20 @@
       }
     }
 
-    // ---- background music: a soft musette loop (D minor), scheduled a little ahead ----
-    const M_STEP = 0.34;
-    const M_CHORDS = [[50, [62, 65, 69]], [45, [61, 64, 67]], [50, [62, 65, 69]], [43, [62, 67, 70]], [45, [61, 64, 67]], [50, [62, 65, 69]], [46, [62, 65, 70]], [45, [61, 64, 67]]];
-    const M_MELODY = [
-      [74, null, 77, 76, 74, null, 69, null], [73, null, 76, 79, 77, 76, 73, null],
-      [74, 77, 81, null, 79, 77, 76, 74], [79, null, 77, 74, 70, null, 74, null],
-      [76, 73, 69, 73, 76, 79, 77, 76], [74, null, null, null, 69, null, 74, null],
-      [70, null, 74, 77, 74, null, 70, null], [73, null, 76, null, 69, null, null, null]
-    ];
+    // ---- background music: The Skaters' Waltz (Les Patineurs, Émile Waldteufel, 1882, public domain),
+    // the tune Konami used in Antarctic Adventure. Our own quiet accordion arrangement of the
+    // main theme (Waltz No. 1, A major, 3/4): bass on beat 1, chord on beats 2 and 3.
+    const M_BEAT = 0.3;
+    // melody as [MIDI note, beats], 16 bars = 48 beats (null = rest)
+    const M_THEME = [[73, 3], [76, 2], [78, 1], [78, 6], [74, 3], [78, 2], [80, 1], [80, 6],
+                     [83, 3], [81, 2], [73, 1], [76, 3], [78, 2], [73, 1], [80, 3], [80, 3], [81, 4], [null, 2]];
+    // a second voice under the cadence (beat → [note, beats])
+    const M_UNDER = { 33: [74, 2], 36: [73, 3], 39: [71, 3], 42: [69, 4] };
+    const M_BARS = [[45, 'A'], [49, 'A'], [47, 'E7'], [40, 'E7'], [47, 'E7'], [40, 'E7'], [49, 'A'], [49, 'A'],
+                    [42, 'F#m'], [42, 'F#m'], [47, 'Bm'], [47, 'Bm'], [40, 'E7'], [40, 'E7'], [45, 'A'], [45, 'A']];
+    const M_CHORD = { 'A': [57, 61, 64], 'E7': [56, 62, 64], 'F#m': [57, 61, 66], 'Bm': [57, 62, 66] };
+    const M_LEN = 48;
+    const M_AT = (() => { const at = {}; let b = 0; for (const [n, len] of M_THEME) { if (n !== null) at[b] = [n, len]; b += len; } return at; })();
     let musicGain = null, musicOn = false, mNext = 0, mStep = 0;
     const hz = m => 440 * Math.pow(2, (m - 69) / 12);
     function reed(m, t, dur, gain) { // two slightly detuned reeds through a soft lowpass: a quiet accordion
@@ -440,16 +452,13 @@
       o.connect(g).connect(musicGain); o.start(t); o.stop(t + 0.5);
     }
     function scheduleStep(i, t) {
-      const bar = Math.floor(i / 8) % M_CHORDS.length, s = i % 8, [b, chord] = M_CHORDS[bar];
-      if (s % 4 === 0) bass(b, t);
-      if (s % 4 === 2) bass(b + 7, t);
-      if (s % 2 === 1) for (const m of chord) reed(m, t, M_STEP * 0.6, 0.05);
-      const m = M_MELODY[bar][s];
-      if (m !== null) {
-        let len = 1;
-        while (s + len < 8 && M_MELODY[bar][s + len] === null && len < 3) len++;
-        reed(m, t, M_STEP * len * 0.95, 0.09);
-      }
+      const k = i % M_LEN, bar = Math.floor(k / 3), beat = k % 3, [b, chord] = M_BARS[bar];
+      if (beat === 0) bass(b, t);                                            // oom
+      else if (bar < 15) for (const m of M_CHORD[chord]) reed(m, t, M_BEAT * 0.55, 0.035); // pah pah
+      const mel = M_AT[k];
+      if (mel) reed(mel[0], t, M_BEAT * mel[1] * 0.95, 0.085);
+      const under = M_UNDER[k];
+      if (under) reed(under[0], t, M_BEAT * under[1] * 0.95, 0.05);
     }
 
     return {
@@ -467,7 +476,7 @@
       musicStop() { musicOn = false; if (musicGain) musicGain.gain.setTargetAtTime(0, ac.currentTime, 0.25); },
       musicTick() {
         if (!ac || !musicOn) return;
-        while (mNext < ac.currentTime + 0.4) { scheduleStep(mStep++, mNext); mNext += M_STEP; }
+        while (mNext < ac.currentTime + 0.4) { scheduleStep(mStep++, mNext); mNext += M_BEAT; }
       },
       get muted() { return muted; },
       toggleMute() {
@@ -607,7 +616,11 @@
   function updateAmbience(pz) {
     let spray = 0, flies = 0, car = 0, carPan = 0, chatter = 0;
     for (const tr of trucks) spray = Math.max(spray, near(tr.z - pz, 4500));
-    for (const p of poops) if (p.flies > 0.1) flies = Math.max(flies, p.flies * near(Math.hypot(p.z - pz, (p.x - playerX) * ROAD_W), 2600));
+    // buzz only while a swarm is flying in close enough to see, not for poop that already has flies
+    for (const p of poops) {
+      if (p.flies <= 0 || p.flies >= 1 || p.z - pz > 7000) continue;
+      flies = Math.max(flies, Math.sin(Math.PI * p.flies) * near(Math.hypot(p.z - pz, (p.x - playerX) * ROAD_W), 7500));
+    }
     for (const c of crossings) for (const cr of c.cars) {
       const dx = (cr.x - playerX) * ROAD_W, v = near(Math.hypot(c.lanes[cr.lane] - pz, dx), 5000);
       if (v > car) { car = v; carPan = Math.max(-1, Math.min(1, dx / 2500)); }
@@ -615,7 +628,10 @@
     const pi = Math.floor(pz / SEG_LEN);
     for (let i = pi - 6; i <= pi + 30; i++) {
       const s = segs[i];
-      if (s && s.terrace && i % 2 === 0) chatter = Math.max(chatter, near(terraceZ(s) - pz, 4000));
+      // only tables where somebody is actually sitting (same rule as drawSitter)
+      if (!s || !s.terrace || i % 2) continue;
+      const people = (seatRand(i, -1) < 0.6) + (seatRand(i, 1) < 0.6);
+      if (people) chatter = Math.max(chatter, near(terraceZ(s) - pz, 4000) * (people === 2 ? 1 : 0.7));
     }
     sfx.ambient({ spray: spray * 0.35, flies: flies * 0.09, car: car * 0.5, carPan, chatter: chatter * 0.45 });
     sfx.musicTick();
