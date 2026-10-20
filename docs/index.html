@@ -97,6 +97,12 @@
   .avatars { display: grid; grid-template-columns: repeat(6, 2.6rem); gap: 6px; justify-content: center; }
   .overlay .avatars button { font-size: 1.4rem; padding: 0; height: 2.6rem; border: 2px solid transparent; outline: none; background: rgba(233,238,245,0.08); }
   .overlay .avatars button[aria-pressed="true"] { border-color: #f2d27a; background: rgba(242,210,122,0.2); }
+  /* hard mode: a smoky red street sign and a badge */
+  .hard .sign { background: #7a2a1f; border-color: #f2c9a0; outline-color: #7a2a1f; }
+  .hard .sign h1::after { content: ' 🔥 HARD'; font-family: var(--font-data); font-size: 0.75rem; letter-spacing: 0.1em; vertical-align: middle; color: #ffd27a; }
+  .overlay button.hard-btn { background: #8c2a1f; border-color: #f2c9a0; outline-color: #8c2a1f; }
+  .overlay button.hard-btn:hover { background: #a8352a; }
+  .hard-note { font-size: 0.85rem; color: #ffc89a; }
   .nick { font: inherit; font-size: 1.05rem; padding: 8px 12px; border-radius: 6px; border: 2px solid var(--sign-edge); width: min(240px, 100%); text-align: center; }
 </style>
 
@@ -127,7 +133,11 @@
       <p>구석으로 비켜 걸어도 소용없어요. 벽 쪽엔 카페 테라스, 연석 쪽엔 살수차 물줄기가 있고, 한쪽에 오래 붙어 있으면 바로 앞에 행인이 나타납니다.</p>
       <p>서둘러 걸을수록 점수 배율이 올라가요. 느긋하게 걸으면 안전하지만 점수가 적고, 비둘기들이 노리기 시작합니다.</p>
       <p class="keys">← → / A D 좌우 이동 (좌우 드래그)<br>↑ ↓ / W S 걷는 속도 (위아래 드래그)<br>Space 점프 (탭)<br>P 일시 정지 (II 버튼)<br>M 소리 켜기/끄기 (🔊 버튼)</p>
-      <button id="startBtn" type="button">산책 시작</button>
+      <p class="hard-note">🔥 하드 모드: 시위로 들끓는 날의 파리. 불타는 쓰레기통과 날아드는 화염병까지 피해 가야 해요. 하드 모드 기록은 순위에 올라가지 않아요.</p>
+      <div class="row">
+        <button id="startBtn" type="button">산책 시작</button>
+        <button id="hardBtn" class="hard-btn" type="button">하드 모드 🔥</button>
+      </div>
       <div class="row lb-only" hidden>
         <button class="ghost" id="boardBtn" type="button">🏆 순위 보기</button>
         <button class="ghost" id="profileBtn" type="button">프로필</button>
@@ -141,6 +151,7 @@
       <p class="lb-status lb-only" id="lbStatus" hidden></p>
       <button class="ghost lb-only" id="lbActionBtn" type="button" hidden>닉네임 정하고 기록 올리기</button>
       <button id="retryBtn" type="button">다시 걷기</button>
+      <button class="ghost" id="switchBtn" type="button">하드 모드로 걷기 🔥</button>
       <button class="ghost lb-only" id="overBoardBtn" type="button" hidden>🏆 순위 보기</button>
     </div>
     <div class="overlay panel" id="boardScreen" hidden>
@@ -298,8 +309,13 @@
 
   // ---------- state ----------
   let best = 0;
-  try { best = Number(localStorage.getItem('ppd-best-score')) || 0; } catch (e) {}
-  $('best').textContent = best.toLocaleString();
+  let hard = false; // hard mode: protest day, with fire on the streets; it keeps its own best score
+  const bestKey = () => hard ? 'ppd-best-hard' : 'ppd-best-score';
+  function loadBest() {
+    try { best = Number(localStorage.getItem(bestKey())) || 0; } catch (e) { best = 0; }
+    $('best').textContent = best.toLocaleString();
+  }
+  loadBest();
 
   // score: metres walked × pace multiplier (60% pace → ×0.5, 100% → ×1, 140% → ×2)
   let score = 0, slowT = 0, slowWarned = false, runMs = 0;
@@ -309,6 +325,8 @@
   let position = 0, speed = 1500, dist = 0, lives = 3, invuln = 0, playerX = 0, step = 0, skyOffset = 0, shake = 0, flash = null;
   let poops = [], dogs = [], peers = [], birds = [], drops = [], stains = [], texts = [], trucks = [];
   let cyclists = [], cycT = 0; // bikes riding the street beside the sidewalk: scenery only
+  // hard mode: burning bins on the pavement, and Molotov cocktails that leave a patch of fire
+  let fires = [], molotovs = [], fireT = 0, molotT = 0;
   let edgeT = 0, edgeSide = 0, cleanT = 0; // how long the walker has hugged one edge; street-cleaner timer
   // pace: the walker's own speed setting, from a slow stroll (0.6×) to a hurry (1.4×)
   const PACE_MIN = 0.6, PACE_MAX = 1.4;
@@ -398,6 +416,15 @@
         g.gain.setTargetAtTime(0, t, 0.04);
         o.start(t0); rough.start(t0); o.stop(t + 0.3); rough.stop(t + 0.3);
       },
+      // Molotov: a whoosh as it flies; glass smashing and a whump of flame as it lands
+      throw(T) { noise({ dur: Math.min(T, 0.7), gain: 0.1, freq: 500, freq1: 2200, filter: 'bandpass', q: 1.4, attack: 0.1 }); },
+      shatter() {
+        noise({ dur: 0.12, gain: 0.22, freq: 5000, filter: 'highpass', q: 0.7 });
+        for (let i = 0; i < 6; i++) tone({ f0: 2600 + Math.random() * 2600, dur: 0.1 + Math.random() * 0.12, type: 'triangle', gain: 0.04, delay: Math.random() * 0.09 });
+        noise({ dur: 0.7, gain: 0.3, freq: 250, freq1: 1400, filter: 'lowpass', delay: 0.04, attack: 0.07 });
+      },
+      // caught by the flames: a hot whoosh and a yelp of a thud
+      burn() { noise({ dur: 0.5, gain: 0.28, freq: 400, freq1: 2600, filter: 'bandpass', q: 0.8, attack: 0.02 }); tone({ f0: 190, f1: 90, dur: 0.3, gain: 0.18 }); },
       crash() { noise({ dur: 0.22, gain: 0.4, freq: 1800, freq1: 400 }); for (const [f, d] of [[1250, 0], [1720, 0.04], [2150, 0.09]]) tone({ f0: f, dur: 0.5, type: 'triangle', gain: 0.1, delay: d }); },
       spray() { noise({ dur: 0.6, gain: 0.25, freq: 900, freq1: 3500, filter: 'bandpass', q: 0.7, attack: 0.03 }); },
       jump() { tone({ f0: 280, f1: 720, dur: 0.16, type: 'triangle', gain: 0.18 }); },
@@ -433,6 +460,9 @@
       const talk = filt('lowpass', 2300);
       amb.chat = chain(talk, [], 0.55);
       amb.murmur = chain(loopNoise(), [filt('bandpass', 420, 1.1)], 0.55);
+      // fire: a breathy roar and a low rumble; the crackle is added as little pops in ambient()
+      amb.fire = chain(loopNoise(), [filt('bandpass', 1800, 0.5)], 0);
+      amb.fireLow = chain(loopNoise(), [filt('lowpass', 200)], 0);
       amb.voices = [112, 138, 198, 236].map(base => {
         const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.value = base; o.start();
         const f1 = filt('bandpass', 600, 6), f2 = filt('bandpass', 1500, 9), g = ac.createGain();
@@ -471,6 +501,11 @@
       amb.chat.g.gain.setTargetAtTime(lv.chatter, t, 0.15);
       amb.murmur.g.gain.setTargetAtTime(lv.chatter * 0.5, t, 0.15);
       if (lv.chatter > 0.001) for (const v of amb.voices) if (t >= v.next) talkStep(v, t);
+      const fire = lv.fire || 0;
+      amb.fire.g.gain.setTargetAtTime(fire * 0.5, t, 0.1);
+      amb.fireLow.g.gain.setTargetAtTime(fire * 1.4, t, 0.1);
+      if (amb.fire.p) { amb.fire.p.pan.setTargetAtTime(lv.firePan || 0, t, 0.05); amb.fireLow.p.pan.setTargetAtTime(lv.firePan || 0, t, 0.05); }
+      if (fire > 0.005 && Math.random() < fire * 3) noise({ dur: 0.015 + Math.random() * 0.03, gain: fire * (0.6 + Math.random()), freq: 1500 + Math.random() * 3500, filter: 'bandpass', q: 2.5, attack: 0.002 });
     }
     // silence everything right now: one-shot sounds, scheduled music notes, all ambience
     function stopAll() {
@@ -480,7 +515,7 @@
       musicOn = false; mNext = 0;
       if (musicGain) setNow(musicGain.gain, 0);
       if (amb) {
-        for (const ch of [amb.spray, amb.flies, amb.road, amb.engine, amb.chat, amb.murmur]) setNow(ch.g.gain, 0);
+        for (const ch of [amb.spray, amb.flies, amb.road, amb.engine, amb.chat, amb.murmur, amb.fire, amb.fireLow]) setNow(ch.g.gain, 0);
         for (const v of amb.voices) { setNow(v.g.gain, 0); v.next = 0; v.phraseEnd = 0; }
       }
     }
@@ -600,6 +635,7 @@
     position = 0; speed = SPEED0; pace = 1; jumpT = 0; jumpCd = 0; dist = 0; lives = 3; invuln = 0; playerX = 0; step = 0; skyOffset = 0; shake = 0; flash = null;
     poops = []; dogs = []; peers = []; birds = []; drops = []; stains = []; texts = []; trucks = [];
     cyclists = []; cycT = 0;
+    fires = []; molotovs = []; fireT = 3; molotT = 6;
     edgeT = 0; edgeSide = 0; cleanT = 14; score = 0; slowT = 0; slowWarned = false; runMs = 0;
     spawnT = 0.3; dogT = 2.5; birdT = 5; peeT = 3; shownPlace = -1; plate = null;
     updateHud(); updatePlace();
@@ -742,6 +778,26 @@
       ph: Math.random() * 6, color: pick(BIKE_COLORS), coat: pick(RIDER_COATS), head: pick(RIDER_HEADS), basket: Math.random() < 0.35 });
   }
 
+  // a street bin set alight, somewhere on the pavement ahead
+  function spawnFire() {
+    const z = position + DRAW * SEG_LEN * 0.8;
+    if (nearCrossing(z)) return;
+    const seg = segAt(z);
+    fires.push({ z, x: (Math.random() * 2 - 1) * (seg.w - 0.25), kind: 'bin', t: Math.random() * 5, seed: Math.random() * 10 });
+  }
+  // a Molotov cocktail lobbed in from the street side, aimed just ahead of the walker (like the
+  // pigeons' droppings: its ring on the ground shows where it will land)
+  function throwMolotov() {
+    const T = Math.max(0.95, 1.35 - dist / 2500);
+    const z = PZ() + speed * T, seg = segAt(z);
+    const x = Math.max(-seg.w + 0.15, Math.min(seg.w - 0.15, playerX + (Math.random() - 0.5) * 0.5));
+    const fromLeft = segAt(PZ()).side > 0;   // the street (and the crowd) is on that side
+    molotovs.push({ sx: fromLeft ? -20 : W + 20, sy: H * (0.5 + Math.random() * 0.2), z, x, t: 0, T, spin: Math.random() * 6 });
+    sfx.play('throw', T);
+  }
+  // a patch of fire grows in a flash, burns, then dies down in its last second
+  const fireScale = f => f.kind === 'bin' ? 1 : Math.min(1, f.t / 0.25) * Math.max(0, Math.min(1, f.life));
+
   // ambience volumes from what is near the walker (closer = louder, 0 when out of earshot)
   const near = (d, range) => { const v = 1 - Math.abs(d) / range; return v > 0 ? v * v : 0; };
   function updateAmbience(pz) {
@@ -765,7 +821,12 @@
       const people = (seatRand(i, -1) < 0.6) + (seatRand(i, 1) < 0.6);
       if (people) chatter = Math.max(chatter, near(terraceZ(s) - pz, 4000) * (people === 2 ? 1 : 0.7));
     }
-    sfx.ambient({ spray: spray * 0.15, flies: flies * 0.09, car: car * 0.5, carPan, chatter: chatter * 0.45 });
+    let fire = 0, firePan = 0;
+    for (const f of fires) {
+      const dx = (f.x - playerX) * ROAD_W, v = near(Math.hypot(f.z - pz, dx), 5500) * (f.kind === 'bin' ? 1 : 0.7 * fireScale(f));
+      if (v > fire) { fire = v; firePan = Math.max(-1, Math.min(1, dx / 2500)); }
+    }
+    sfx.ambient({ spray: spray * 0.15, flies: flies * 0.09, car: car * 0.5, carPan, chatter: chatter * 0.45, fire: fire * 0.14, firePan });
     sfx.musicTick();
   }
 
@@ -778,7 +839,11 @@
     return false;
   }
 
-  function start() {
+  function start(isHard = hard) {
+    hard = !!isHard;
+    document.body.classList.toggle('hard', hard);
+    loadBest();
+    $('lbStatus').hidden = true;
     sfx.unlock(); sfx.play('start'); sfx.musicStart(true);
     reset();
     state = 'play';
@@ -814,14 +879,16 @@
     else if (d < 400) msg += '바게트 하나 사 들고 돌아가세요.';
     else if (d < 800) msg += '꽤 능숙한 산책가예요.';
     else msg += '당신은 진정한 똥 회피의 달인입니다.';
-    if (sc > best) { best = sc; msg = '최고 점수! ' + msg; try { localStorage.setItem('ppd-best-score', String(best)); } catch (e) {} }
+    if (sc > best) { best = sc; msg = (hard ? '하드 모드 최고 점수! ' : '최고 점수! ') + msg; try { localStorage.setItem(bestKey(), String(best)); } catch (e) {} }
     $('best').textContent = best.toLocaleString();
     $('finalScore').textContent = sc.toLocaleString() + '점';
     $('finalDist').textContent = d + ' m 걸음 · ' + p.ko + ' 근처';
     $('overMsg').textContent = msg;
     $('overScreen').hidden = false;
     $('retryBtn').focus();
-    lbGameOver({ score: sc, dist: d, place: placeAt(dist), duration: Math.round(runMs) });
+    $('switchBtn').textContent = hard ? '보통 모드로 걷기' : '하드 모드로 걷기 🔥';
+    if (hard) { $('lbStatus').hidden = false; $('lbStatus').textContent = '하드 모드 기록은 순위에 올라가지 않아요.'; }
+    else lbGameOver({ score: sc, dist: d, place: placeAt(dist), duration: Math.round(runMs) });
   }
 
   function loop(t) {
@@ -920,6 +987,28 @@
     if (cycT <= 0) { spawnCyclist(); cycT = 1.2 + Math.random() * 3.5; }
     for (const c of cyclists) { c.z += c.v * dt; c.ph += Math.abs(c.v) * dt / 380; }
 
+    if (hard) {
+      fireT -= dt;
+      if (fireT <= 0) { spawnFire(); fireT = Math.max(2.4, 6 - dist / 250) * (0.7 + Math.random() * 0.6); }
+      if (dist > 30) {
+        molotT -= dt;
+        if (molotT <= 0) { throwMolotov(); molotT = Math.max(2.2, 6.5 - dist / 200) * (0.7 + Math.random() * 0.6); }
+      }
+    }
+    for (const f of fires) { f.t += dt; if (f.kind === 'patch') f.life -= dt; }
+    // a Molotov smashes where it lands: a direct hit if you're there, and a patch of fire either way
+    for (let i = molotovs.length - 1; i >= 0; i--) {
+      const m = molotovs[i];
+      m.t += dt;
+      if (m.t < m.T) continue;
+      molotovs.splice(i, 1);
+      sfx.play('shatter');
+      fires.push({ z: m.z, x: m.x, r: 0.28, kind: 'patch', t: 0, life: 4.5, seed: Math.random() * 10 });
+      if (invuln <= 0 && Math.abs(m.x - playerX) < 0.3 && Math.abs(m.z - pz) < 600) {
+        if (takeHit('화염병이다!', 'rgba(240,120,30,0.5)', 'burn')) return;
+      }
+    }
+
     if (jumpT > 0) jumpT = Math.max(0, jumpT - dt);
     if (jumpCd > 0) jumpCd = Math.max(0, jumpCd - dt);
     for (const p of poops) {
@@ -1001,6 +1090,18 @@
         }
       }
     }
+    // fire: a burning bin is too tall to jump; a patch of fire on the ground can be jumped
+    if (invuln <= 0) {
+      for (const f of fires) {
+        if (Math.abs(f.z - pz) > reach + 40) continue;
+        if (f.kind === 'patch' && airborne()) continue;
+        const r = f.kind === 'bin' ? 0.16 : f.r * fireScale(f);
+        if (r > 0.04 && Math.abs(f.x - playerX) < r + 0.07) {
+          if (takeHit(f.kind === 'bin' ? '앗 뜨거! 쓰레기통이 불타요!' : '앗 뜨거! 불길이다!', 'rgba(240,120,30,0.45)', 'burn')) return;
+          break;
+        }
+      }
+    }
     // the street cleaner's spray along the curb
     if (invuln <= 0) {
       for (const tr of trucks) {
@@ -1030,6 +1131,7 @@
     peers = peers.filter(s => s.z > position + 100 && s.leave < 2.5);
     trucks = trucks.filter(tr => tr.z > position - SPRAY_LEN && tr.z < position + DRAW * SEG_LEN);
     cyclists = cyclists.filter(c => c.z > position - 400 && c.z < position + DRAW * SEG_LEN && segAt(c.z).side === c.side);
+    fires = fires.filter(f => f.z > position + 100 && (f.kind === 'bin' || f.life > 0));
     birds = birds.filter(b => b.x > -60 && b.x < W + 60);
     texts = texts.filter(t => t.life > 0);
 
@@ -1114,6 +1216,8 @@
     for (const s of peers) add(s.z, () => drawPeer(s));
     for (const c of crossings) for (const car of c.cars) add(c.lanes[car.lane], () => (car.bike ? drawBike : drawCar)(toScreen(c.lanes[car.lane], car.x), car));
     for (const c of cyclists) add(c.z, () => drawCyclist(c));
+    for (const f of fires) add(f.z, () => drawFire(toScreen(f.z, f.x), f));
+    for (const m of molotovs) add(m.z, () => drawTarget(toScreen(m.z, m.x), { t: m.t, T: m.T, r: 0.3 }));
 
     for (let n = DRAW - 1; n >= 0; n--) {
       drawSegment(rows[n]);
@@ -1133,6 +1237,7 @@
       ctx.beginPath(); ctx.ellipse(fx, fy, 3 + k * 3, 4.5 + k * 4, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
     for (const b of birds) drawBird(b);
+    for (const m of molotovs) drawMolotov(m);
 
     ctx.textAlign = 'center';
     for (const t of texts) {
@@ -1275,10 +1380,11 @@
   const ROOFS = Array.from({ length: 48 }, (_, i) => ({ w: 26 + ((i * 37) % 40), h: 10 + ((i * 53) % 26), chim: i % 3 }));
   function drawSky() {
     const g = ctx.createLinearGradient(0, 0, 0, HORIZON);
-    g.addColorStop(0, '#8fb0cf'); g.addColorStop(1, '#e4e6e1');
+    if (hard) { g.addColorStop(0, '#59555e'); g.addColorStop(1, '#d99c72'); }   // smoke over the city, an orange glow low down
+    else { g.addColorStop(0, '#8fb0cf'); g.addColorStop(1, '#e4e6e1'); }
     ctx.fillStyle = g; ctx.fillRect(-10, -10, W + 20, HORIZON + 10);
     // soft clouds drift with the bends
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillStyle = hard ? 'rgba(110,100,100,0.5)' : 'rgba(255,255,255,0.7)';
     for (let i = 0; i < 5; i++) {
       const cx = ((i * 211 + skyOffset * 0.3) % (W + 200) + W + 200) % (W + 200) - 100, cy = HORIZON * (0.15 + (i % 3) * 0.12);
       ctx.beginPath(); ctx.ellipse(cx, cy, 46, 12, 0, 0, Math.PI * 2); ctx.ellipse(cx + 26, cy - 7, 28, 11, 0, 0, Math.PI * 2); ctx.fill();
@@ -1561,6 +1667,63 @@
         ctx.beginPath(); ctx.arc(fx, fy, fs, 0, Math.PI * 2); ctx.fill();
       }
     }
+  }
+  // one licking flame: a teardrop that sways, orange outside and yellow inside
+  function flame(x, y, w, h, ph) {
+    const sway = Math.sin(ph) * w * 0.35, hh = h * (0.85 + 0.15 * Math.sin(ph * 1.7));
+    ctx.fillStyle = 'rgba(236,104,32,0.9)';
+    ctx.beginPath(); ctx.moveTo(x - w / 2, y); ctx.quadraticCurveTo(x - w * 0.55, y - hh * 0.55, x + sway, y - hh);
+    ctx.quadraticCurveTo(x + w * 0.55, y - hh * 0.55, x + w / 2, y); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,214,90,0.95)';
+    ctx.beginPath(); ctx.moveTo(x - w * 0.25, y); ctx.quadraticCurveTo(x - w * 0.28, y - hh * 0.35, x + sway * 0.6, y - hh * 0.6);
+    ctx.quadraticCurveTo(x + w * 0.28, y - hh * 0.35, x + w * 0.25, y); ctx.closePath(); ctx.fill();
+  }
+  // burning bin (the green Paris litter bin) or a spreading patch of fire left by a Molotov
+  function drawFire(p, f) {
+    if (!p) return;
+    const k = p.k, t = reduceMotion ? 0 : f.t;
+    if (f.kind === 'bin') {
+      ctx.fillStyle = 'rgba(255,140,40,0.22)';                                         // glow on the pavement
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, 420 * k, 420 * k * p.flat, 0, 0, Math.PI * 2); ctx.fill();
+      for (let j = 0; j < 4; j++) {                                                     // smoke rising and drifting
+        const u = (t * 0.35 + j / 4) % 1;
+        ctx.fillStyle = `rgba(70,66,66,${0.45 * (1 - u)})`;
+        ctx.beginPath(); ctx.arc(p.x + Math.sin(u * 3 + f.seed) * 120 * k + u * 160 * k, p.y - (700 + u * 1500) * k, (130 + u * 260) * k, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = '#2f5d46'; ctx.fillRect(p.x - 130 * k, p.y - 430 * k, 260 * k, 430 * k);  // the bin
+      ctx.fillStyle = '#1f3f30'; ctx.fillRect(p.x - 140 * k, p.y - 450 * k, 280 * k, 40 * k);
+      ctx.fillStyle = '#4a4a4a'; ctx.fillRect(p.x - 20 * k, p.y - 430 * k, 40 * k, 430 * k);
+      for (let j = 0; j < 5; j++) flame(p.x + (j - 2) * 60 * k, p.y - 440 * k, 150 * k, (380 + 120 * Math.sin(j * 2.1 + f.seed)) * k, t * 9 + j * 1.3 + f.seed);
+      return;
+    }
+    const sc = fireScale(f), R = f.r * ROAD_W * k * sc;
+    if (sc <= 0) return;
+    ctx.fillStyle = 'rgba(40,30,25,0.5)';                                               // scorched pavement
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, R * 1.05, R * 1.05 * p.flat, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,140,40,0.3)';
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, R * 1.3, R * 1.3 * p.flat, 0, 0, Math.PI * 2); ctx.fill();
+    // flames standing on the patch, back row first
+    for (let j = 0; j < 7; j++) {
+      const a = Math.PI * (j / 6), fx = p.x + Math.cos(a + f.seed) * R * 0.75, fy = p.y - Math.abs(Math.sin(a)) * R * p.flat * 0.6;
+      flame(fx, fy, 110 * k * sc, (220 + 90 * Math.sin(j * 1.9 + f.seed)) * k * sc, t * 10 + j * 1.7);
+    }
+    flame(p.x, p.y + R * p.flat * 0.3, 140 * k * sc, 300 * k * sc, t * 8 + f.seed);
+  }
+  // the bottle in flight: arcs over from the street side, tumbling, its rag alight
+  function drawMolotov(m) {
+    const tgt = toScreen(m.z, m.x);
+    if (!tgt) return;
+    const k = Math.min(m.t / m.T, 1);
+    const x = m.sx + (tgt.x - m.sx) * k, y = m.sy + (tgt.y - m.sy) * k - Math.sin(Math.PI * k) * H * 0.32;
+    const s = Math.max(0.8, H / 600) * (0.8 + k * 0.6);
+    ctx.save(); ctx.translate(x, y); ctx.rotate(m.spin + m.t * 9); ctx.scale(s, s);
+    ctx.fillStyle = 'rgba(120,150,90,0.9)'; ctx.fillRect(-4, -6, 8, 14);
+    ctx.fillStyle = 'rgba(90,120,70,0.95)'; ctx.fillRect(-2, -11, 4, 6);
+    ctx.fillStyle = '#e8dcc6'; ctx.fillRect(-1.5, -15, 3, 5);
+    ctx.restore();
+    ctx.save(); ctx.translate(x, y - 12 * s);
+    flame(0, 0, 10 * s, (16 + Math.sin(m.t * 30) * 4) * s, m.t * 20);
+    ctx.restore();
   }
   function drawTarget(p, d) {
     if (!p) return;
@@ -1979,7 +2142,7 @@
     if ((e.key === 'm' || e.key === 'M') && !e.repeat) { toggleSound(); return; }
     if (e.key === ' ' && state === 'play') { e.preventDefault(); if (!e.repeat) jump(); return; }
     if (keyMap[e.key]) { keys[keyMap[e.key]] = true; drag = null; e.preventDefault(); }
-    if ((e.key === ' ' || e.key === 'Enter') && state !== 'play' && document.activeElement?.tagName !== 'BUTTON') { e.preventDefault(); start(); }
+    if ((e.key === ' ' || e.key === 'Enter') && state !== 'play' && document.activeElement?.tagName !== 'BUTTON') { e.preventDefault(); start(hard); }
   });
   addEventListener('keyup', e => { if (keyMap[e.key]) keys[keyMap[e.key]] = false; });
   canvas.addEventListener('pointerdown', e => {
@@ -1998,8 +2161,10 @@
   });
   canvas.addEventListener('pointercancel', () => { drag = null; });
 
-  $('startBtn').addEventListener('click', start);
-  $('retryBtn').addEventListener('click', start);
+  $('startBtn').addEventListener('click', () => start(false));
+  $('hardBtn').addEventListener('click', () => start(true));
+  $('retryBtn').addEventListener('click', () => start(hard));
+  $('switchBtn').addEventListener('click', () => start(!hard));
 
   // ---------- scoreboard (Supabase) ----------
   // Fill in the Supabase project's URL and publishable (anon) key. The publishable key is
