@@ -1477,10 +1477,10 @@
         const front = area([[fx0, ft], [fx1, ft], [fx1, fb], [fx0, fb]]);
         const faces = [
           ['#56744a', [[bx1, bt], [bx0, bt], [bx0, bb], [bx1, bb]]],   // far end
-          ['#4c6a3f', [[bx1, bt], [fx1, ft], [fx1, fb], [bx1, bb]]],   // right side
-          ['#4c6a3f', [[fx0, ft], [bx0, bt], [bx0, bb], [fx0, fb]]],   // left side
+          ['#4c6a3f', [[bx1, bb], [fx1, fb], [fx1, ft], [bx1, bt]]],   // right side
+          ['#4c6a3f', [[fx0, fb], [bx0, bb], [bx0, bt], [fx0, ft]]],   // left side
           ['#3f5a34', [[bx0, bb], [bx1, bb], [fx1, fb], [fx0, fb]]],   // clipped underside
-          ['#7f9f66', [[bx1, bt], [bx0, bt], [fx0, ft], [fx1, ft]]]    // clipped top
+          ['#7f9f66', [[fx1, ft], [fx0, ft], [bx0, bt], [bx1, bt]]]    // clipped top
         ];
         for (const [color, pts] of faces) if (area(pts) * front > 0) poly(color, pts);
       }
