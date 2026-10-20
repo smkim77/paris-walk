@@ -1776,7 +1776,9 @@
   function drawPaceGauge() {
     const x = 12, y = H - 22, w = Math.min(160, Math.max(140, W * 0.36)), h = 10;
     const t = (pace - PACE_MIN) / (PACE_MAX - PACE_MIN);
-    const kmh = speed / UNITS_PER_M * 3.6; // forward speed actually being walked
+    // shown as a believable walking speed: 4.5 km/h at the starting pace, gently compressed so the
+    // game's speed-up reads as a brisk walk to a jog (about 3–10 km/h) rather than a car's speed
+    const kmh = 4.5 * Math.pow(speed / 1500, 0.6);
     ctx.fillStyle = 'rgba(27,30,36,0.72)';
     ctx.beginPath(); ctx.roundRect(x - 6, y - 46, w + 12, h + 54, 6); ctx.fill();
     ctx.textAlign = 'left'; ctx.fillStyle = '#f2d27a';
