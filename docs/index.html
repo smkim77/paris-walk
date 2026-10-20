@@ -423,19 +423,41 @@
     }
 
     // ---- background music: The Skaters' Waltz (Les Patineurs, Émile Waldteufel, 1882, public domain),
-    // the tune Konami used in Antarctic Adventure. Our own quiet accordion arrangement of the
-    // main theme (Waltz No. 1, A major, 3/4): bass on beat 1, chord on beats 2 and 3.
-    const M_BEAT = 0.3;
-    // melody as [MIDI note, beats], 16 bars = 48 beats (null = rest)
+    // the tune Konami used in Antarctic Adventure. Our own quiet accordion arrangement of Waltz No. 1
+    // from the original score: main theme (A major) twice, then the bouncy second strain (D major,
+    // ending on F# minor) twice, and round again. 3/4: bass on beat 1, chord on beats 2 and 3.
+    const M_BEAT = 0.3, M_HALF = M_BEAT / 2;   // the scheduler steps in half beats (for the eighth-note runs)
+    // melodies as [MIDI note, beats] (null = rest)
     const M_THEME = [[73, 3], [76, 2], [78, 1], [78, 6], [74, 3], [78, 2], [80, 1], [80, 6],
                      [83, 3], [81, 2], [73, 1], [76, 3], [78, 2], [73, 1], [80, 3], [80, 3], [81, 4], [null, 2]];
-    // a second voice under the cadence (beat → [note, beats])
-    const M_UNDER = { 33: [74, 2], 36: [73, 3], 39: [71, 3], 42: [69, 4] };
-    const M_BARS = [[45, 'A'], [49, 'A'], [47, 'E7'], [40, 'E7'], [47, 'E7'], [40, 'E7'], [49, 'A'], [49, 'A'],
-                    [42, 'F#m'], [42, 'F#m'], [47, 'Bm'], [47, 'Bm'], [40, 'E7'], [40, 'E7'], [45, 'A'], [45, 'A']];
-    const M_CHORD = { 'A': [57, 61, 64], 'E7': [56, 62, 64], 'F#m': [57, 61, 66], 'Bm': [57, 62, 66] };
-    const M_LEN = 48;
-    const M_AT = (() => { const at = {}; let b = 0; for (const [n, len] of M_THEME) { if (n !== null) at[b] = [n, len]; b += len; } return at; })();
+    const M_THEME_UNDER = [[null, 33], [74, 2], [null, 1], [73, 3], [71, 3], [69, 4], [null, 2]];   // second voice in the cadence
+    const M_RUN_UP = [[66, 0.5], [69, 0.5], [74, 0.5], [78, 0.5]];                                  // F# A D F# into the second strain
+    const M_STRAIN = [[83, 1], [null, 1], [81, 1], [null, 1], [93, 1], [null, 1],
+                      [61, 4], [67, 0.5], [69, 0.5], [73, 0.5], [76, 0.5],
+                      [83, 1], [null, 1], [81, 1], [null, 1], [93, 1], [null, 1],
+                      [62, 4], [66, 0.5], [69, 0.5], [74, 0.5], [78, 0.5],
+                      [83, 1], [null, 1], [81, 1], [null, 1], [93, 1], [null, 1],
+                      [61, 4], [85, 1], [null, 1], [65, 4], [89, 1], [null, 1], [66, 4], [null, 2]];
+    const M_THEME_BARS = [[45, 'A'], [49, 'A'], [47, 'E7'], [40, 'E7'], [47, 'E7'], [40, 'E7'], [49, 'A'], [49, 'A'],
+                          [42, 'F#m'], [42, 'F#m'], [47, 'Bm'], [47, 'Bm'], [40, 'E7'], [40, 'E7'], [45, 'A'], [45, 'A', 'end']];
+    const M_STRAIN_BARS = [[38, 'D'], [45, 'D'], [40, 'A7'], [45, 'A7'], [40, 'A7'], [45, 'A7'], [38, 'D'], [45, 'D'],
+                           [38, 'D'], [38, 'D'], [49, 'F#m'], [49, 'F#m'], [49, 'C#7'], [37, 'C#7'], [42, 'F#m'], [42, 'F#m', 'end']];
+    const M_CHORD = { 'A': [57, 61, 64], 'E7': [56, 62, 64], 'F#m': [57, 61, 66], 'Bm': [57, 62, 66],
+                      'D': [57, 62, 66], 'A7': [55, 57, 61], 'C#7': [56, 59, 61] };
+    // lay the whole loop out once: notes by half-beat step, harmony by bar
+    const SONG = (() => {
+      const notes = {}, bars = [];
+      const put = (list, at, gain) => { let h = at; for (const [n, len] of list) { if (n !== null) (notes[h] = notes[h] || []).push([n, len, n > 88 ? gain * 0.7 : gain]); h += len * 2; } };
+      const section = (mel, under, harm, h) => { put(mel, h, 0.085); if (under) put(under, h, 0.05); bars.push(...harm); };
+      let h = 0;
+      section(M_THEME, M_THEME_UNDER, M_THEME_BARS, h); h += 96;
+      section(M_THEME, M_THEME_UNDER, M_THEME_BARS, h); h += 96;
+      put(M_RUN_UP, h - 4, 0.085);                       // pickup into the second strain
+      section(M_STRAIN, null, M_STRAIN_BARS, h); h += 96;
+      put(M_RUN_UP, h - 4, 0.085);                       // and into its repeat
+      section(M_STRAIN, null, M_STRAIN_BARS, h); h += 96;
+      return { notes, bars, len: h };
+    })();
     let musicGain = null, musicOn = false, mNext = 0, mStep = 0;
     const hz = m => 440 * Math.pow(2, (m - 69) / 12);
     function reed(m, t, dur, gain) { // two slightly detuned reeds through a soft lowpass: a quiet accordion
@@ -452,13 +474,13 @@
       o.connect(g).connect(musicGain); o.start(t); o.stop(t + 0.5);
     }
     function scheduleStep(i, t) {
-      const k = i % M_LEN, bar = Math.floor(k / 3), beat = k % 3, [b, chord] = M_BARS[bar];
-      if (beat === 0) bass(b, t);                                            // oom
-      else if (bar < 15) for (const m of M_CHORD[chord]) reed(m, t, M_BEAT * 0.55, 0.035); // pah pah
-      const mel = M_AT[k];
-      if (mel) reed(mel[0], t, M_BEAT * mel[1] * 0.95, 0.085);
-      const under = M_UNDER[k];
-      if (under) reed(under[0], t, M_BEAT * under[1] * 0.95, 0.05);
+      const h = i % SONG.len;
+      if (h % 2 === 0) {                                  // on the beat: oom-pah-pah
+        const beat = (h / 2) % 3, [b, chord, end] = SONG.bars[Math.floor(h / 6)];
+        if (beat === 0) bass(b, t);
+        else if (!end) for (const m of M_CHORD[chord]) reed(m, t, M_BEAT * 0.55, 0.035);
+      }
+      for (const [n, len, gain] of SONG.notes[h] || []) reed(n, t, M_BEAT * len * 0.95, gain);
     }
 
     return {
@@ -468,15 +490,16 @@
       },
       ambient(lv) { if (!window.PROMO) ambient(lv); },
       quiet() { stopAll(); },
-      musicStart() {
+      musicStart(fromTop) {
         if (!ac || !musicGain) return;
+        if (fromTop) mStep = 0;   // a new game starts the waltz from the beginning; resuming carries on
         musicOn = true; mNext = Math.max(mNext, ac.currentTime + 0.1);
         musicGain.gain.setTargetAtTime(0.22, ac.currentTime, 0.6);   // kept low: background only
       },
       musicStop() { musicOn = false; if (musicGain) musicGain.gain.setTargetAtTime(0, ac.currentTime, 0.25); },
       musicTick() {
         if (!ac || !musicOn) return;
-        while (mNext < ac.currentTime + 0.4) { scheduleStep(mStep++, mNext); mNext += M_BEAT; }
+        while (mNext < ac.currentTime + 0.4) { scheduleStep(mStep++, mNext); mNext += M_HALF; }
       },
       get muted() { return muted; },
       toggleMute() {
@@ -647,7 +670,7 @@
   }
 
   function start() {
-    sfx.unlock(); sfx.play('start'); sfx.musicStart();
+    sfx.unlock(); sfx.play('start'); sfx.musicStart(true);
     reset();
     state = 'play';
     $('startScreen').hidden = true; $('overScreen').hidden = true; $('pauseBtn').hidden = false;
