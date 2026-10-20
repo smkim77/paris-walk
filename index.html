@@ -201,7 +201,7 @@
   // sidewalk width relative to the obstacles (1.2 = 20% wider than the original layout)
   const SIDEWALK = 1.2;
   // street trees are one kind per block: natural round crowns, or Paris-style pruned ones, clipped
-  // square or into a long low rectangle. The kind can only change across a crossing.
+  // square or into a tall upright rectangle. The kind can only change across a crossing.
   function nextTreeStyle() {
     if (Math.random() < 0.3) return;                       // sometimes the next block keeps the same trees
     const others = ['round', 'square', 'rect'].filter(t => t !== gen.treeStyle);
@@ -1441,9 +1441,9 @@
     ctx.fillStyle = '#5b5e63'; ctx.fillRect(p.x - 160 * k, p.y - 14 * k, 320 * k, 28 * k);
     ctx.fillStyle = '#7a6a58'; ctx.fillRect(p.x - 30 * k, p.y - 1300 * k, 60 * k, 1300 * k);
     if (style !== 'round') {
-      // clipped crown, flat like the round one: a square, or a long low rectangle that reads as a
-      // continuous trimmed curtain once the trees line up into the distance
-      const hw = style === 'square' ? 460 : 640, top = style === 'square' ? 2150 : 1950, bot = 1250;
+      // clipped crown, flat like the round one: a square, or a tall upright rectangle (a column-like
+      // pruned crown, taller than it is wide)
+      const hw = style === 'square' ? 460 : 340, top = style === 'square' ? 2150 : 2600, bot = 1250;
       const x0 = p.x - hw * k, w = 2 * hw * k, y0 = p.y - top * k, h = (top - bot) * k;
       ctx.fillStyle = '#5f7f4e'; ctx.fillRect(x0, y0, w, h);
       ctx.fillStyle = '#4f6d41'; ctx.fillRect(x0, y0 + h * 0.84, w, h * 0.16);              // shaded underside
