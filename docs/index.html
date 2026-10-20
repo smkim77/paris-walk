@@ -357,7 +357,16 @@
   function spawnCleaner() {
     trucks.push({ z: PZ() + 9000 + Math.random() * 3000, v: 450 + Math.random() * 150, t: 0 });
   }
-  const SPRAY_LEN = 650, SPRAY_REACH = 0.42; // spray covers ±650 units around the truck, 0.42 road units in from the curb
+  const SPRAY_LEN = 650, SPRAY_REACH = 0.42; // spray covers ±650 units around the truck, up to 0.42 road units in from the curb
+  // how far the wet patch reaches in from the curb at world z: widest beside the truck, tapering
+  // to nothing at both ends, with a ragged edge that stays put on the pavement
+  function wetReach(tr, z) {
+    const d = Math.abs(z - tr.z) / SPRAY_LEN;
+    if (d >= 1) return 0;
+    const taper = Math.pow(1 - d * d, 0.6);
+    const ragged = 0.74 + 0.14 * Math.sin(z * 0.011) + 0.08 * Math.sin(z * 0.0043 + 1.3) + 0.04 * Math.sin(z * 0.031);
+    return SPRAY_REACH * taper * ragged;
+  }
   // café table + two bistro chairs on every other terrace segment
   const TERRACE_HALF = 0.2;
   const terraceZ = s => (s.i + 0.5) * SEG_LEN;
@@ -616,7 +625,7 @@
     // the street cleaner's spray along the curb
     if (invuln <= 0) {
       for (const tr of trucks) {
-        if (Math.abs(tr.z - pz) < SPRAY_LEN && playerX < -pseg.w + SPRAY_REACH) {
+        if (playerX < -pseg.w + wetReach(tr, pz)) {
           if (takeHit('살수차 물벼락!', 'rgba(111,160,200,0.45)')) return;
           break;
         }
@@ -788,10 +797,17 @@
     quad('#6f8aa3', 0, 1, -1.1, -1.06);                                   // gutter water
     quad('#9d968b', 0, 1, -1.06, -1);                                     // curb
     quad(Math.floor(seg.i / 2) % 2 ? '#cfc6b8' : '#c5bbac', 0, 1, -1, 1); // sidewalk slabs
-    // wet strip along the curb where a street cleaner is spraying
+    // wet patch along the curb where a street cleaner is spraying: a ragged, tapering
+    // inner edge (sampled 6× per segment) with a lighter sheen inside
     for (const tr of trucks) {
-      const f0 = Math.max(0, (tr.z - SPRAY_LEN - row.zs) / SEG_LEN), f1 = Math.min(1, (tr.z + SPRAY_LEN - row.zs) / SEG_LEN);
-      if (f1 > f0) quad('rgba(90,120,150,0.4)', f0, f1, -1.06, -1 + SPRAY_REACH / seg.w);
+      if (row.zs + SEG_LEN < tr.z - SPRAY_LEN || row.zs > tr.z + SPRAY_LEN) continue;
+      const N = 6, outer = [], inner = [], sheen = [];
+      for (let j = 0; j <= N; j++) {
+        const f = j / N, e = wetReach(tr, row.zs + f * SEG_LEN) / seg.w;
+        outer.push(P(f, -1.1)); inner.push(P(f, -1.1 + Math.max(0, e + 0.1))); sheen.push(P(f, -1 + e * 0.45));
+      }
+      poly('rgba(62,88,115,0.36)', [...outer, ...inner.reverse()]);
+      poly('rgba(205,222,238,0.16)', [...outer.slice(), ...sheen.reverse()]);
     }
     quad('rgba(120,108,92,0.35)', 0, 1, -0.34, -0.33);
     quad('rgba(120,108,92,0.35)', 0, 1, 0.33, 0.34);
@@ -1196,15 +1212,42 @@
       ctx.font = `${Math.max(6, w * 0.09)}px "IBM Plex Mono", Consolas, monospace`;
       ctx.fillText('PROPRETÉ DE PARIS', p.x, p.y - h * 0.185);
     }
-    // water jets arcing onto the sidewalk edge
+    // water fans out from a side nozzle as streams of droplets that break up as they fly,
+    // with a misty splash where they hit the pavement
     const seg = segAt(tr.z);
-    ctx.strokeStyle = 'rgba(200,225,245,0.75)'; ctx.lineWidth = Math.max(1, 30 * k); ctx.lineCap = 'round';
+    const sx = p.x + w * 0.5, sy = p.y - 330 * k;
+    ctx.fillStyle = 'rgba(160,185,205,0.9)';
+    ctx.fillRect(sx - 10 * k, sy - 25 * k, 70 * k, 50 * k);
     for (let j = 0; j < 5; j++) {
-      const dz = (j - 2) * SPRAY_LEN * 0.4, wob = reduceMotion ? 0 : Math.sin(tr.t * 9 + j) * 0.05;
-      const g = toScreen(tr.z + dz, -seg.w + SPRAY_REACH * (0.35 + 0.15 * (j % 3)) + wob);
+      const dz = (j - 2) * SPRAY_LEN * 0.35, wob = reduceMotion ? 0 : Math.sin(tr.t * 9 + j) * 0.04;
+      const zj = tr.z + dz;
+      const g = toScreen(zj, -seg.w + wetReach(tr, zj) * 0.7 + wob);
       if (!g) continue;
-      const sx = p.x + w * 0.5, sy = p.y - 330 * k;
-      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo((sx + g.x) / 2, Math.min(sy, g.y) - 60 * k, g.x, g.y); ctx.stroke();
+      const cx = (sx + g.x) / 2, cy = Math.min(sy, g.y) - 90 * k;
+      const at = u => [(1 - u) * (1 - u) * sx + 2 * (1 - u) * u * cx + u * u * g.x, (1 - u) * (1 - u) * sy + 2 * (1 - u) * u * cy + u * u * g.y];
+      // a thin solid core near the nozzle
+      ctx.strokeStyle = 'rgba(215,232,246,0.7)'; ctx.lineWidth = Math.max(1, 14 * k); ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(sx, sy);
+      for (let u = 0.05; u <= 0.35; u += 0.05) { const [x, y] = at(u); ctx.lineTo(x, y); }
+      ctx.stroke();
+      // droplets flowing along the arc, spreading out further along
+      for (let i = 0; i < 12; i++) {
+        const u = (i / 12 + (reduceMotion ? 0 : tr.t * 1.6)) % 1;
+        if (u < 0.25) continue;
+        const [x, y] = at(u), spread = u * 40 * k;
+        const jx = Math.sin(i * 12.9 + j * 3.1) * spread, jy = Math.cos(i * 7.3 + j) * spread * 0.6;
+        ctx.fillStyle = `rgba(220,236,248,${0.85 - u * 0.4})`;
+        ctx.beginPath(); ctx.arc(x + jx, y + jy, Math.max(0.8, (10 + u * 12) * k), 0, Math.PI * 2); ctx.fill();
+      }
+      // splash and mist at the landing point
+      const r = Math.max(2, 90 * g.k);
+      ctx.fillStyle = 'rgba(225,238,248,0.35)';
+      ctx.beginPath(); ctx.ellipse(g.x, g.y - r * 0.3, r, r * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(235,244,252,0.8)';
+      for (let i = 0; i < 4; i++) {
+        const a = Math.PI * (0.15 + 0.7 * i / 3), h = (0.6 + 0.4 * Math.abs(Math.sin(tr.t * 11 + i + j))) * r;
+        ctx.beginPath(); ctx.arc(g.x + Math.cos(a) * r * 0.8 - r * 0.4, g.y - Math.sin(a) * h, Math.max(0.8, r * 0.09), 0, Math.PI * 2); ctx.fill();
+      }
     }
   }
 
