@@ -424,8 +424,9 @@
 
     // ---- background music: The Skaters' Waltz (Les Patineurs, Émile Waldteufel, 1882, public domain),
     // the tune Konami used in Antarctic Adventure. Our own quiet accordion arrangement of Waltz No. 1
-    // from the original score: main theme (A major) twice, then the bouncy second strain (D major,
-    // ending on F# minor) twice, and round again. 3/4: bass on beat 1, chord on beats 2 and 3.
+    // from the original score: main theme (A major) twice, the second strain (D major, ending on F# minor)
+    // twice, then the high, bouncy pp middle of Waltz No. 1 (chords answered by a high A or B, eighth by
+    // eighth) twice, and round again. 3/4: bass on beat 1, chord on beats 2 and 3.
     const M_BEAT = 0.3, M_HALF = M_BEAT / 2;   // the scheduler steps in half beats (for the eighth-note runs)
     // melodies as [MIDI note, beats] (null = rest)
     const M_THEME = [[73, 3], [76, 2], [78, 1], [78, 6], [74, 3], [78, 2], [80, 1], [80, 6],
@@ -442,12 +443,26 @@
                           [42, 'F#m'], [42, 'F#m'], [47, 'Bm'], [47, 'Bm'], [40, 'E7'], [40, 'E7'], [45, 'A'], [45, 'A', 'end']];
     const M_STRAIN_BARS = [[38, 'D'], [45, 'D'], [40, 'A7'], [45, 'A7'], [40, 'A7'], [45, 'A7'], [38, 'D'], [45, 'D'],
                            [38, 'D'], [38, 'D'], [49, 'F#m'], [49, 'F#m'], [49, 'C#7'], [37, 'C#7'], [42, 'F#m'], [42, 'F#m', 'end']];
+    // the bouncy middle, as a high line (hi) over the chords it bounces off (lo); chords are arrays of notes
+    const M_BOUNCE = (() => {
+      const hi = [], lo = [], CE = [85, 88], CF = [85, 90], DE = [86, 88], DF = [86, 90];
+      const hop = (x, y, top) => { for (const c of [x, y, x]) { lo.push([c, 0.5], [null, 0.5]); hi.push([null, 0.5], [top, 0.5]); } };
+      const stab = (q, top, inner) => { lo.push([q, 1], [inner, 0.5], [null, 0.5], [inner, 0.5], [null, 0.5]); hi.push([null, 1], [top, 0.5], [null, 0.5], [top, 0.5], [null, 0.5]); };
+      const trill = (under, last = 93) => { lo.push(...under.map(n => [n, 1])); hi.push([92, 0.5], [93, 0.5], [92, 0.5], [93, 0.5], [92, 0.5], [last, 0.5]); };
+      hop(CE, CF, 93); hop(CF, CE, 93); stab(DE, 92, 86); stab(DE, 92, 86);
+      hop(DE, DF, 95); hop(DF, DE, 95); stab(CE, 93, 85); stab(CE, 93, 85);
+      hop(CE, CF, 93); hop(CF, CE, 93); stab(CE, 92, 88); stab([83, 88], 92, 88);
+      trill([84, 87, 84]); trill([87, 84, 87]); trill([85, 88, 85]); trill([88, 86, 88], 95);
+      return { hi, lo, pickHi: [[null, 0.5], [93, 0.5], [null, 0.5], [93, 0.5]], pickLo: [[CE, 0.5], [null, 0.5], [CF, 0.5], [null, 0.5]] };
+    })();
+    const M_BOUNCE_BARS = [[45, 'A'], [40, 'A'], [47, 'E7'], [40, 'E7'], [44, 'E7'], [40, 'E7'], [45, 'A'], [49, 'A'],
+                           [45, 'A'], [45, 'A'], [44, 'E'], [44, 'E'], [44, 'G#7'], [44, 'G#7'], [45, 'A'], [40, 'E7']];
     const M_CHORD = { 'A': [57, 61, 64], 'E7': [56, 62, 64], 'F#m': [57, 61, 66], 'Bm': [57, 62, 66],
-                      'D': [57, 62, 66], 'A7': [55, 57, 61], 'C#7': [56, 59, 61] };
+                      'D': [57, 62, 66], 'A7': [55, 57, 61], 'C#7': [56, 59, 61], 'E': [56, 59, 64], 'G#7': [56, 60, 63] };
     // lay the whole loop out once: notes by half-beat step, harmony by bar
     const SONG = (() => {
       const notes = {}, bars = [];
-      const put = (list, at, gain) => { let h = at; for (const [n, len] of list) { if (n !== null) (notes[h] = notes[h] || []).push([n, len, n > 88 ? gain * 0.7 : gain]); h += len * 2; } };
+      const put = (list, at, gain) => { let h = at; for (const [n, len] of list) { if (n !== null) for (const m of [].concat(n)) (notes[h] = notes[h] || []).push([m, len, m > 88 ? gain * 0.7 : gain]); h += len * 2; } };
       const section = (mel, under, harm, h) => { put(mel, h, 0.085); if (under) put(under, h, 0.05); bars.push(...harm); };
       let h = 0;
       section(M_THEME, M_THEME_UNDER, M_THEME_BARS, h); h += 96;
@@ -456,6 +471,10 @@
       section(M_STRAIN, null, M_STRAIN_BARS, h); h += 96;
       put(M_RUN_UP, h - 4, 0.085);                       // and into its repeat
       section(M_STRAIN, null, M_STRAIN_BARS, h); h += 96;
+      for (let k = 0; k < 2; k++) {                      // the bouncy middle twice; its last bar (E7) leads back to the theme
+        if (k === 0) { put(M_BOUNCE.pickHi, h - 4, 0.085); put(M_BOUNCE.pickLo, h - 4, 0.045); }
+        put(M_BOUNCE.hi, h, 0.085); put(M_BOUNCE.lo, h, 0.045); bars.push(...M_BOUNCE_BARS); h += 96;
+      }
       return { notes, bars, len: h };
     })();
     let musicGain = null, musicOn = false, mNext = 0, mStep = 0;
