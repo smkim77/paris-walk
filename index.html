@@ -1089,17 +1089,25 @@
     for (const row of rows) {
       const s = row.seg, zc = row.zs + SEG_LEN * 0.5;
       const S = s.side;
-      if (s.tree) {
-        // a pruned crown is a real box: its far end comes from projecting the same spot further along
-        const depth = s.treeStyle === 'box' ? 1000 : 760, z2 = zc + depth;
-        add(zc, () => drawTree(toScreen(zc, -S * s.w * 1.13), s.treeStyle, s.treeStyle === 'round' ? null : toScreen(z2, -S * segAt(z2).w * 1.13), S));
-      }
+      if (s.tree && s.treeStyle === 'round') add(zc, () => drawTree(toScreen(zc, -S * s.w * 1.13)));
       if (s.lamp) add(zc + 1, () => drawLamp(toScreen(zc + 1, -S * s.w * 1.06)));
       if (s.morris) add(zc + 2, () => drawMorris(toScreen(zc + 2, -S * s.w * 1.2)));
       // bridge lamps on both parapets; the square's fountain or obelisk out in the open
       if (s.kind === 'bridge' && s.k % 8 === 4) for (const u of [1.08, -BRIDGE_ROAD]) add(zc + 3, () => drawLamp(toScreen(zc + 3, S * s.w * u)));
       if (s.feature) add(zc, () => (s.feature === 'fountain' ? drawFountain : drawObelisk)(toScreen(zc, S * s.w * 3.2)));
       if (s.terrace && s.i % 2 === 0) add(terraceZ(s), () => drawTerrace(toScreen(terraceZ(s), terraceX(s)), s.i));
+    }
+    // pruned crowns are real boxes: the far end comes from projecting the same spot further along.
+    // One whose near end is already level with the walker is cut off there, so the box (and a
+    // curtain of them) stays closed right up to the edge of the screen.
+    for (let i = Math.max(0, baseIdx - 6); i < baseIdx + DRAW; i++) {
+      const s = segs[i];
+      if (!s || !s.tree || s.treeStyle === 'round') continue;
+      const zc = s.i * SEG_LEN + SEG_LEN * 0.5, z2 = zc + (s.treeStyle === 'box' ? 1000 : 760);
+      const zf = Math.max(zc, position + PLAYER_Z * 0.62);
+      if (zf >= z2) continue;
+      const at = z => toScreen(z, -s.side * segAt(z).w * 1.13);
+      add(zf, () => drawTree(at(zf), s.treeStyle, at(z2), s.side, zf > zc));
     }
     for (const tr of trucks) add(tr.z, () => drawCleaner(tr));
     for (const st of stains) add(st.z, () => drawStain(toScreen(st.z, st.x), st.seed));
@@ -1442,23 +1450,34 @@
     ctx.fillStyle = 'rgba(110,80,70,0.35)';
     for (let j = 0; j < 6; j++) ctx.fillRect(p.x - 40 * k, p.y - (1500 + j * 600) * k, 80 * k, 300 * k);
   }
-  function drawTree(p, style = 'round', p2 = null, S = 1) {
+  function drawTree(p, style = 'round', p2 = null, S = 1, cut = false) {
     if (!p) return;
     const k = p.k;
-    ctx.fillStyle = '#5b5e63'; ctx.fillRect(p.x - 160 * k, p.y - 14 * k, 320 * k, 28 * k);
-    ctx.fillStyle = '#7a6a58'; ctx.fillRect(p.x - 30 * k, p.y - 1300 * k, 60 * k, 1300 * k);
+    if (!cut) {
+      ctx.fillStyle = '#5b5e63'; ctx.fillRect(p.x - 160 * k, p.y - 14 * k, 320 * k, 28 * k);
+      ctx.fillStyle = '#7a6a58'; ctx.fillRect(p.x - 30 * k, p.y - 1300 * k, 60 * k, 1300 * k);
+    }
     if (style !== 'round') {
       // pruned crown: box = wide and low, trimmed into a continuous curtain along the street;
-      // cube = as tall as it is wide, with gaps between trees. Top and inner side first, front last.
+      // cube = as tall as it is wide, with gaps between trees. Every face of the box whose outside
+      // looks toward us is painted (back-face test on the screen winding), so it never shows a hole,
+      // whichever way the street bends.
       const hw = style === 'box' ? 330 : 380, y0 = style === 'box' ? 1350 : 1300, y1 = style === 'box' ? 2150 : 2060;
       const fx0 = p.x - hw * k, fx1 = p.x + hw * k, ft = p.y - y1 * k, fb = p.y - y0 * k;
       if (p2) {
         const k2 = p2.k, bx0 = p2.x - hw * k2, bx1 = p2.x + hw * k2, bt = p2.y - y1 * k2, bb = p2.y - y0 * k2;
-        const ix = S > 0 ? fx1 : fx0, ibx = S > 0 ? bx1 : bx0;
-        poly('#4c6a3f', [[ix, ft], [ibx, bt], [ibx, bb], [ix, fb]]);                        // side facing the sidewalk
-        poly('#3f5a34', [[fx0, fb], [fx1, fb], [bx1, bb], [bx0, bb]]);                     // flat clipped underside (the crown is above eye level)
+        const area = pts => { let a = 0; for (let j = 0; j < pts.length; j++) { const [x1, y1_] = pts[j], [x2, y2] = pts[(j + 1) % pts.length]; a += x1 * y2 - x2 * y1_; } return a; };
+        const front = area([[fx0, ft], [fx1, ft], [fx1, fb], [fx0, fb]]);
+        const faces = [
+          ['#56744a', [[bx1, bt], [bx0, bt], [bx0, bb], [bx1, bb]]],   // far end
+          ['#4c6a3f', [[bx1, bt], [fx1, ft], [fx1, fb], [bx1, bb]]],   // right side
+          ['#4c6a3f', [[fx0, ft], [bx0, bt], [bx0, bb], [fx0, fb]]],   // left side
+          ['#3f5a34', [[bx0, bb], [bx1, bb], [fx1, fb], [fx0, fb]]],   // clipped underside
+          ['#7f9f66', [[bx1, bt], [bx0, bt], [fx0, ft], [fx1, ft]]]    // clipped top
+        ];
+        for (const [color, pts] of faces) if (area(pts) * front > 0) poly(color, pts);
       }
-      ctx.fillStyle = '#5f7f4e'; ctx.fillRect(fx0, ft, fx1 - fx0, fb - ft);
+      ctx.fillStyle = cut ? '#56744a' : '#5f7f4e'; ctx.fillRect(fx0, ft, fx1 - fx0, fb - ft);
       ctx.fillStyle = 'rgba(40,64,34,0.16)';                                              // a little leafy texture
       for (let j = 0; j < 9; j++) {
         ctx.beginPath();
