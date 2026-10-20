@@ -725,7 +725,11 @@
   function spawnCyclist() {
     const toward = Math.random() < 0.4, far = position + (DRAW - 6) * SEG_LEN, r = Math.random();
     const base = r < 0.35 ? 900 + Math.random() * 1300 : r < 0.8 ? 2000 + Math.random() * 1200 : 3000 + Math.random() * 800;
-    const v = toward ? -base * 0.75 : base * 0.65, z = toward || v < speed ? far : position - 300, seg = segAt(z);
+    const v = toward ? -base * 0.75 : base * 0.65;
+    // faster than us: comes up from behind; slower: starts ahead, about 7 s of catching up away
+    // (not at the far end of the street, or it would stay a speck in the distance for ages)
+    const z = toward ? far : v > speed ? position - 300 : position + Math.max(6000, Math.min(far - position, (speed - v) * 7));
+    const seg = segAt(z);
     if (seg.flipX) return;
     cyclists.push({ z, v, side: seg.side, lane: toward ? 1.95 : 1.45, toward,
       ph: Math.random() * 6, color: pick(BIKE_COLORS), coat: pick(RIDER_COATS), head: pick(RIDER_HEADS), basket: Math.random() < 0.35 });
