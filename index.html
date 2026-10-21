@@ -63,7 +63,7 @@
   }
   .overlay button:hover { background: #26498a; }
   .overlay button:focus-visible { outline: 3px solid #f2d27a; }
-  .keys { font-family: var(--font-data); font-size: 0.75rem; opacity: 0.75; }
+  .keys { font-family: var(--font-body); font-size: 0.78rem; opacity: 0.75; }
   /* scoreboard */
   .overlay.panel { background: rgba(20, 24, 31, 0.94); justify-content: flex-start; padding-top: 28px; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
@@ -94,7 +94,7 @@
   .overlay .avatars button[aria-pressed="true"] { border-color: #f2d27a; background: rgba(242,210,122,0.2); }
   /* hard mode: a smoky red street sign and a badge */
   .hard .sign { background: #7a2a1f; border-color: #f2c9a0; outline-color: #7a2a1f; }
-  .hard .sign h1::after { content: ' 🔥 HARD'; font-family: var(--font-data); font-size: 0.75rem; letter-spacing: 0.1em; vertical-align: middle; color: #ffd27a; }
+  .hard .sign h1::after { content: ' HARD'; font-family: var(--font-data); font-size: 0.75rem; letter-spacing: 0.1em; vertical-align: middle; color: #ffd27a; }
   /* difficulty picker: 일반 / 하드, one segmented control on the start and game-over screens */
   .diff { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
   .diff .tabs { border-color: rgba(233,238,245,0.7); }
@@ -131,10 +131,10 @@
       <div class="diff">난이도
         <div class="tabs" role="radiogroup" aria-label="난이도">
           <button type="button" role="radio" data-mode="normal" aria-checked="true">일반</button>
-          <button type="button" role="radio" data-mode="hard" aria-checked="false">하드 🔥</button>
+          <button type="button" role="radio" data-mode="hard" aria-checked="false">하드</button>
         </div>
       </div>
-      <p class="hard-note" hidden>🔥 폭동이 번진 날의 파리. 불길과 화염병, 약탈자까지 피해야 해요. (순위 미반영)</p>
+      <p class="hard-note" hidden>폭동이 번진 날의 파리. 불길과 화염병, 약탈자까지 피해야 해요. 순위표도 따로예요.</p>
       <button id="startBtn" type="button">산책 시작</button>
       <div class="row lb-only" hidden>
         <button class="ghost" id="boardBtn" type="button">🏆 순위 보기</button>
@@ -151,7 +151,7 @@
       <div class="diff">난이도
         <div class="tabs" role="radiogroup" aria-label="난이도">
           <button type="button" role="radio" data-mode="normal" aria-checked="true">일반</button>
-          <button type="button" role="radio" data-mode="hard" aria-checked="false">하드 🔥</button>
+          <button type="button" role="radio" data-mode="hard" aria-checked="false">하드</button>
         </div>
       </div>
       <button id="retryBtn" type="button">다시 걷기</button>
@@ -159,7 +159,11 @@
     </div>
     <div class="overlay panel" id="boardScreen" hidden>
       <h2>순위</h2>
-      <div class="tabs" role="tablist">
+      <div class="tabs" role="tablist" aria-label="난이도">
+        <button type="button" role="tab" id="tabNormal" aria-selected="true">일반</button>
+        <button type="button" role="tab" id="tabHard" aria-selected="false">하드</button>
+      </div>
+      <div class="tabs" role="tablist" aria-label="기간">
         <button type="button" role="tab" id="tabAll" aria-selected="true">전체</button>
         <button type="button" role="tab" id="tabWeek" aria-selected="false">이번 주</button>
       </div>
@@ -947,8 +951,7 @@
     $('overMsg').textContent = msg;
     $('overScreen').hidden = false;
     $('retryBtn').focus();
-    if (hard) { $('lbStatus').hidden = false; $('lbStatus').textContent = '하드 모드 기록은 순위에 올라가지 않아요.'; }
-    else lbGameOver({ score: sc, dist: d, place: placeAt(dist), duration: Math.round(runMs) });
+    lbGameOver({ score: sc, dist: d, place: placeAt(dist), duration: Math.round(runMs), mode: hard ? 'hard' : 'normal' });
   }
 
   function loop(t) {
@@ -2565,16 +2568,20 @@
       : `참가자 ${data.total}명`;
   }
   async function loadBoard() {
+    $('tabNormal').setAttribute('aria-selected', String(boardMode === 'normal'));
+    $('tabHard').setAttribute('aria-selected', String(boardMode === 'hard'));
     $('tabAll').setAttribute('aria-selected', String(boardPeriod === 'all'));
     $('tabWeek').setAttribute('aria-selected', String(boardPeriod === 'week'));
     $('boardMe').textContent = '불러오는 중…';
     try {
-      renderBoard(await rpc('leaderboard', { p_period: boardPeriod, p_player: profile ? profile.id : null }));
+      renderBoard(await rpc('leaderboard', { p_period: boardPeriod, p_player: profile ? profile.id : null, ...(boardMode === 'hard' ? { p_mode: 'hard' } : {}) }));
     } catch (e) {
       $('boardList').replaceChildren(); $('boardMe').textContent = errText(e);
     }
   }
-  function openBoard(period = 'all') { boardPeriod = period; $('boardScreen').hidden = false; $('boardClose').focus(); loadBoard(); }
+  // the board opens on the difficulty you're playing; tabs switch between 일반 / 하드 and 전체 / 이번 주
+  let boardMode = 'normal';
+  function openBoard(period = 'all') { boardPeriod = period; boardMode = hard ? 'hard' : 'normal'; $('boardScreen').hidden = false; $('boardClose').focus(); loadBoard(); }
 
   function openProfile(hint, after) {
     afterProfile = after || null;
@@ -2638,11 +2645,12 @@
     try {
       const r = await rpc('submit_run', {
         p_player: profile.id, p_secret: profile.secret, p_nickname: profile.nickname, p_avatar: profile.avatar,
-        p_score: run.score, p_dist: run.dist, p_place: run.place, p_duration_ms: run.duration
+        p_score: run.score, p_dist: run.dist, p_place: run.place, p_duration_ms: run.duration,
+        ...(run.mode === 'hard' ? { p_mode: 'hard' } : {})
       });
       pendingRun = null;
       const a = r.all.me, w = r.week.me;
-      $('lbStatus').textContent = `전체 ${a ? a.rank : '-'}위 · 이번 주 ${w ? w.rank : '-'}위` + (a && a.score === run.score ? ' (내 최고 기록!)' : '');
+      $('lbStatus').textContent = (run.mode === 'hard' ? '하드 ' : '') + `전체 ${a ? a.rank : '-'}위 · 이번 주 ${w ? w.rank : '-'}위` + (a && a.score === run.score ? ' (내 최고 기록!)' : '');
     } catch (e) {
       $('lbStatus').textContent = errText(e);
       $('lbActionBtn').textContent = '다시 올리기';
@@ -2661,6 +2669,8 @@
     if (!hasNickname()) openProfile('닉네임을 정하면 방금 기록이 순위에 올라가요.', submitPending);
     else submitPending();
   });
+  $('tabNormal').addEventListener('click', () => { boardMode = 'normal'; loadBoard(); });
+  $('tabHard').addEventListener('click', () => { boardMode = 'hard'; loadBoard(); });
   $('tabAll').addEventListener('click', () => { boardPeriod = 'all'; loadBoard(); });
   $('tabWeek').addEventListener('click', () => { boardPeriod = 'week'; loadBoard(); });
   $('boardClose').addEventListener('click', closePanels);

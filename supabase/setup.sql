@@ -1,10 +1,10 @@
--- 파리 똥 피하기 스코어보드 설정
+-- 파리 산책하기 스코어보드 설정 (일반 / 하드 순위표)
 -- Supabase 대시보드 → SQL Editor → New query 에 이 파일 전체를 붙여 넣고 Run 하세요.
 -- 여러 번 실행해도 안전해요.
 --
 -- 구조
 --   players : 브라우저마다 만든 플레이어 ID, 비밀값의 해시, 닉네임, 프로필 이모지
---   runs    : 한 판 한 판의 기록 (점수, 거리, 도착한 명소, 걸린 시간)
+--   runs    : 한 판 한 판의 기록 (점수, 거리, 도착한 명소, 걸린 시간, 난이도 normal/hard)
 --   게임은 아래 함수로만 읽고 써요. 테이블은 API로 직접 읽거나 쓸 수 없어요.
 --     submit_run   : 기록 올리기 (비밀값 확인, 말이 안 되는 기록 거르기)
 --     save_profile : 닉네임·이모지 저장
@@ -33,6 +33,20 @@ create table if not exists public.runs (
   created_at  timestamptz not null default now()
 );
 create index if not exists runs_player_score_idx on public.runs (player_id, score desc);
+-- 난이도 (하드 모드 순위표). 예전 기록은 모두 일반(normal)이에요.
+alter table public.runs add column if not exists mode text not null default 'normal';
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'runs_mode_check') then
+    alter table public.runs add constraint runs_mode_check check (mode in ('normal', 'hard'));
+  end if;
+end $$;
+create index if not exists runs_mode_player_score_idx on public.runs (mode, player_id, score desc);
+-- 난이도가 없던 예전 함수들은 지워요 (아래에서 난이도를 받는 새 함수로 다시 만들어요)
+drop function if exists public.leaderboard(text, uuid);
+drop function if exists public.submit_run(uuid, text, text, text, integer, integer, smallint, integer);
+drop function if exists private.leaderboard(text, uuid);
+drop function if exists private.submit_run(uuid, text, text, text, integer, integer, smallint, integer);
+drop function if exists private.ranked(timestamptz);
 create index if not exists runs_created_idx on public.runs (created_at);
 
 alter table public.players enable row level security;
@@ -134,8 +148,8 @@ as $$
 $$;
 revoke all on function private.week_start() from public, anon, authenticated;
 
--- 순위 계산: 기간 안에서 플레이어마다 최고 기록 하나, 점수가 같으면 먼저 세운 기록이 위
-create or replace function private.ranked(p_since timestamptz)
+-- 순위 계산: 그 난이도, 그 기간 안에서 플레이어마다 최고 기록 하나, 점수가 같으면 먼저 세운 기록이 위
+create or replace function private.ranked(p_since timestamptz, p_mode text)
 returns table (rank bigint, player_id uuid, score integer, dist integer, place smallint, created_at timestamptz)
 language sql
 stable
@@ -145,16 +159,16 @@ as $$
   with best as (
     select distinct on (r.player_id) r.player_id, r.score, r.dist, r.place, r.created_at
     from public.runs r
-    where r.created_at >= p_since
+    where r.created_at >= p_since and r.mode = p_mode
     order by r.player_id, r.score desc, r.created_at asc
   )
   select row_number() over (order by b.score desc, b.created_at asc), b.player_id, b.score, b.dist, b.place, b.created_at
   from best b;
 $$;
-revoke all on function private.ranked(timestamptz) from public, anon, authenticated;
+revoke all on function private.ranked(timestamptz, text) from public, anon, authenticated;
 
--- 순위표: 상위 10명 + (플레이어를 넘기면) 내 순위
-create or replace function private.leaderboard(p_period text, p_player uuid)
+-- 순위표: 상위 10명 + (플레이어를 넘기면) 내 순위, 난이도별
+create or replace function private.leaderboard(p_period text, p_player uuid, p_mode text)
 returns jsonb
 language plpgsql
 stable
@@ -174,28 +188,31 @@ begin
   else
     raise exception 'bad_period';
   end if;
+  if p_mode is null or p_mode not in ('normal', 'hard') then
+    raise exception 'bad_mode';
+  end if;
 
   select coalesce(jsonb_agg(jsonb_build_object(
            'rank', t.rank, 'nickname', p.nickname, 'avatar', p.avatar,
            'score', t.score, 'dist', t.dist, 'place', t.place, 'mine', t.player_id = p_player
          ) order by t.rank), '[]'::jsonb)
   into v_top
-  from private.ranked(v_since) t
+  from private.ranked(v_since, p_mode) t
   join public.players p on p.id = t.player_id
   where t.rank <= 10;
 
-  select count(*) into v_total from private.ranked(v_since);
+  select count(*) into v_total from private.ranked(v_since, p_mode);
 
   select jsonb_build_object('rank', t.rank, 'score', t.score, 'dist', t.dist, 'place', t.place)
   into v_me
-  from private.ranked(v_since) t
+  from private.ranked(v_since, p_mode) t
   where t.player_id = p_player;
 
-  return jsonb_build_object('period', p_period, 'top', v_top, 'me', v_me, 'total', v_total);
+  return jsonb_build_object('period', p_period, 'mode', p_mode, 'top', v_top, 'me', v_me, 'total', v_total);
 end;
 $$;
-revoke all on function private.leaderboard(text, uuid) from public;
-grant execute on function private.leaderboard(text, uuid) to anon, authenticated;
+revoke all on function private.leaderboard(text, uuid, text) from public;
+grant execute on function private.leaderboard(text, uuid, text) to anon, authenticated;
 
 -- 기록 올리기
 --   말이 안 되는 기록은 거절해요:
@@ -204,7 +221,7 @@ grant execute on function private.leaderboard(text, uuid) to anon, authenticated
 --     같은 플레이어가 3초 안에 다시 올리면 거절
 create or replace function private.submit_run(
   p_player uuid, p_secret text, p_nickname text, p_avatar text,
-  p_score integer, p_dist integer, p_place smallint, p_duration_ms integer
+  p_score integer, p_dist integer, p_place smallint, p_duration_ms integer, p_mode text
 )
 returns jsonb
 language plpgsql
@@ -222,6 +239,9 @@ begin
      or p_dist > (p_duration_ms / 1000.0) * 25 + 20 then
     raise exception 'bad_score';
   end if;
+  if p_mode is null or p_mode not in ('normal', 'hard') then
+    raise exception 'bad_mode';
+  end if;
 
   perform private.check_player(p_player, p_secret, p_nickname, p_avatar);
 
@@ -229,16 +249,16 @@ begin
     raise exception 'too_fast';
   end if;
 
-  insert into public.runs (player_id, score, dist, place, duration_ms)
-  values (p_player, p_score, p_dist, p_place, p_duration_ms);
+  insert into public.runs (player_id, score, dist, place, duration_ms, mode)
+  values (p_player, p_score, p_dist, p_place, p_duration_ms, p_mode);
 
-  v_all := private.leaderboard('all', p_player);
-  v_week := private.leaderboard('week', p_player);
+  v_all := private.leaderboard('all', p_player, p_mode);
+  v_week := private.leaderboard('week', p_player, p_mode);
   return jsonb_build_object('status', 'ok', 'all', v_all, 'week', v_week);
 end;
 $$;
-revoke all on function private.submit_run(uuid, text, text, text, integer, integer, smallint, integer) from public;
-grant execute on function private.submit_run(uuid, text, text, text, integer, integer, smallint, integer) to anon, authenticated;
+revoke all on function private.submit_run(uuid, text, text, text, integer, integer, smallint, integer, text) from public;
+grant execute on function private.submit_run(uuid, text, text, text, integer, integer, smallint, integer, text) to anon, authenticated;
 
 create or replace function private.save_profile(p_player uuid, p_secret text, p_nickname text, p_avatar text)
 returns jsonb
@@ -254,32 +274,32 @@ $$;
 revoke all on function private.save_profile(uuid, text, text, text) from public;
 grant execute on function private.save_profile(uuid, text, text, text) to anon, authenticated;
 
--- 게임이 부르는 공개 창구 (/rest/v1/rpc/…)
-create or replace function public.leaderboard(p_period text, p_player uuid default null)
+-- 게임이 부르는 공개 창구 (/rest/v1/rpc/…). p_mode를 안 보내면 일반 순위표예요.
+create or replace function public.leaderboard(p_period text, p_player uuid default null, p_mode text default 'normal')
 returns jsonb
 language sql
 stable
 security invoker
 set search_path = ''
 as $$
-  select private.leaderboard(p_period, p_player);
+  select private.leaderboard(p_period, p_player, p_mode);
 $$;
-revoke all on function public.leaderboard(text, uuid) from public;
-grant execute on function public.leaderboard(text, uuid) to anon, authenticated;
+revoke all on function public.leaderboard(text, uuid, text) from public;
+grant execute on function public.leaderboard(text, uuid, text) to anon, authenticated;
 
 create or replace function public.submit_run(
   p_player uuid, p_secret text, p_nickname text, p_avatar text,
-  p_score integer, p_dist integer, p_place smallint, p_duration_ms integer
+  p_score integer, p_dist integer, p_place smallint, p_duration_ms integer, p_mode text default 'normal'
 )
 returns jsonb
 language sql
 security invoker
 set search_path = ''
 as $$
-  select private.submit_run(p_player, p_secret, p_nickname, p_avatar, p_score, p_dist, p_place, p_duration_ms);
+  select private.submit_run(p_player, p_secret, p_nickname, p_avatar, p_score, p_dist, p_place, p_duration_ms, p_mode);
 $$;
-revoke all on function public.submit_run(uuid, text, text, text, integer, integer, smallint, integer) from public;
-grant execute on function public.submit_run(uuid, text, text, text, integer, integer, smallint, integer) to anon, authenticated;
+revoke all on function public.submit_run(uuid, text, text, text, integer, integer, smallint, integer, text) from public;
+grant execute on function public.submit_run(uuid, text, text, text, integer, integer, smallint, integer, text) to anon, authenticated;
 
 create or replace function public.save_profile(p_player uuid, p_secret text, p_nickname text, p_avatar text)
 returns jsonb
@@ -300,4 +320,7 @@ do $$ begin
 end $$;
 
 -- PostgREST가 새 함수를 바로 알아보도록 스키마 캐시를 새로 고쳐요.
+notify pgrst, 'reload schema';
+
+-- API가 바뀐 함수 목록을 바로 알아채도록
 notify pgrst, 'reload schema';
