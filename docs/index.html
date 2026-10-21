@@ -334,10 +334,11 @@
   // the walking speed the readout shows: 4.5 km/h at the starting pace, gently compressed so the
   // game's speed-up reads as a brisk walk to a jog (about 3–10 km/h) rather than a car's speed
   const walkKmh = () => 4.5 * Math.pow(speed / SPEED0, 0.5);
-  // legs keep a real cadence for that speed: about 1.6 steps a second at a stroll, 1.8 at an easy
-  // walk, up to about 2.8 at a jog (one swing of sin() = two steps); gait is the leg phase
+  // legs keep a cadence that follows that speed, exaggerated so it reads clearly: about 1.4 steps a
+  // second at a stroll, 1.8 at an easy walk, up to about 3.8 at a jog (one swing of sin() = two
+  // steps); gait is the leg phase
   let gait = 0;
-  const cadence = () => 0.9 + 0.2 * walkKmh();
+  const cadence = () => 0.2 + 0.36 * walkKmh();
   const SPEED0 = 1050; // forward speed at the start, at normal pace: an easy walk that picks up with distance
   let pace = 1;
   // jump: Space hops over poop and pee for a moment; another jump only after the cooldown
@@ -2105,12 +2106,16 @@
     const x = W / 2 + (playerX * ROAD_W - camX) * k0, gy = HORIZON + K;
     const Hh = 520 * k0;
     const air = jumpHeight();                       // 0 on the ground … 1 at the top of a jump
-    const y = gy - air * Hh * 0.38;
+    const y0 = gy - air * Hh * 0.38;
+    drawJumpCooldown(x, y0 - Hh * 1.1);
+    if (invuln > 0 && Math.floor(invuln * 10) % 2 === 0) { playerScreen = { x, y: y0, h: Hh }; return; }
+    // legs and arms swing at the walking cadence, take longer strides the faster you go, and the
+    // whole body bobs on each step (barely at a stroll, a real bounce at a jog)
+    const kmh = walkKmh();
+    const sw = air > 0 ? 0 : Math.sin(gait) * Hh * (0.012 + 0.009 * kmh);
+    const bob = air > 0 ? 0 : Math.abs(Math.sin(gait)) * Hh * Math.max(0, kmh - 3) * 0.006;
+    const y = y0 - bob;
     playerScreen = { x, y, h: Hh };
-    drawJumpCooldown(x, y - Hh * 1.1);
-    if (invuln > 0 && Math.floor(invuln * 10) % 2 === 0) return;
-    // legs and arms swing at the walking cadence, and take longer strides the faster you go
-    const sw = air > 0 ? 0 : Math.sin(gait) * Hh * (0.03 + 0.005 * walkKmh());
     ctx.fillStyle = `rgba(0,0,0,${0.22 - air * 0.1})`;
     ctx.beginPath(); ctx.ellipse(x, gy, Hh * 0.2 * (1 - air * 0.35), Hh * 0.05 * (1 - air * 0.35), 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#2d3138';
