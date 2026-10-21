@@ -816,13 +816,21 @@
     fires.push({ z, x: (Math.random() * 2 - 1) * (seg.w - 0.25), kind: 'bin', pile: Math.random() < 0.5, t: Math.random() * 5, seed: Math.random() * 10 });
   }
   // a Molotov cocktail lobbed in from the street side, aimed just ahead of the walker (like the
-  // pigeons' droppings: its ring on the ground shows where it will land)
+  // pigeons' droppings: its ring on the ground shows where it will land). Same rhythm as ever, but
+  // when a cyclist is riding along in view, it is usually one of them who throws it.
   function throwMolotov() {
     const T = Math.max(0.95, 1.35 - dist / 2500);
     const z = PZ() + speed * T, seg = segAt(z);
     const x = Math.max(-seg.w + 0.15, Math.min(seg.w - 0.15, playerX + (Math.random() - 0.5) * 0.5));
-    const fromLeft = segAt(PZ()).side > 0;   // the street (and the crowd) is on that side
-    molotovs.push({ sx: fromLeft ? -20 : W + 20, sy: H * (0.5 + Math.random() * 0.2), z, x, t: 0, T, spin: Math.random() * 6 });
+    const side = segAt(PZ()).side, fromLeft = side > 0;   // the street (and the crowd) is on that side
+    let sx = fromLeft ? -20 : W + 20, sy = H * (0.5 + Math.random() * 0.2);
+    const riders = cyclists.filter(c => c.side === side && c.z - position > 900 && c.z - position < 7000);
+    if (riders.length && Math.random() < 0.7) {
+      const c = riders[Math.floor(Math.random() * riders.length)], sg = segAt(c.z);
+      const hand = toScreen(c.z, -c.side * sg.w * c.lane, 430);
+      if (hand) { sx = hand.x; sy = hand.y; c.throwT = 0.5; }
+    }
+    molotovs.push({ sx, sy, z, x, t: 0, T, spin: Math.random() * 6 });
     sfx.play('throw', T);
   }
   // a patch of fire grows in a flash, burns, then dies down in its last second
@@ -1023,7 +1031,7 @@
 
     cycT -= dt;
     if (cycT <= 0) { spawnCyclist(); cycT = 1.2 + Math.random() * 3.5; }
-    for (const c of cyclists) { c.z += c.v * dt; c.ph += Math.abs(c.v) * dt / 380; }
+    for (const c of cyclists) { c.z += c.v * dt; c.ph += Math.abs(c.v) * dt / 380; if (c.throwT) c.throwT = Math.max(0, c.throwT - dt); }
 
     if (hard) {
       fireT -= dt;
@@ -2233,6 +2241,11 @@
     ctx.strokeStyle = '#4a4f57'; ctx.lineWidth = lw * 0.6;
     ctx.beginPath(); ctx.moveTo(-Hh * 0.18, -Hh * 0.67); ctx.lineTo(Hh * 0.18, -Hh * 0.67); ctx.stroke();
     if (c.toward && c.basket) { ctx.fillStyle = '#9a7448'; ctx.fillRect(-Hh * 0.09, -Hh * 0.64, Hh * 0.18, Hh * 0.1); }
+    if (c.throwT > 0) {                                                                      // follow-through of a throw toward the pavement
+      const u = 1 - c.throwT / 0.5, sd = c.side;
+      ctx.strokeStyle = c.coat; ctx.lineWidth = lw * 1.1;
+      ctx.beginPath(); ctx.moveTo(sd * Hh * 0.12, -Hh * 0.83); ctx.lineTo(sd * Hh * (0.22 + 0.12 * u), -Hh * (1.12 - 0.2 * u)); ctx.stroke();
+    }
     drawRiderHead(0, -Hh * 0.95, Hh * 0.08, c.head, c.toward);
     ctx.restore();
   }
