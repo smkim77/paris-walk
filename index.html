@@ -817,11 +817,24 @@
     const x = Math.max(-seg.w + 0.15, Math.min(seg.w - 0.15, playerX + (Math.random() - 0.5) * 0.5));
     const side = segAt(PZ()).side, fromLeft = side > 0;   // the street (and the crowd) is on that side
     let sx = fromLeft ? -20 : W + 20, sy = H * (0.5 + Math.random() * 0.2);
-    const riders = cyclists.filter(c => c.side === side && c.z - position > 900 && c.z - position < 7000);
-    if (riders.length && Math.random() < 0.7) {
-      const c = riders[Math.floor(Math.random() * riders.length)], sg = segAt(c.z);
-      const hand = toScreen(c.z, -c.side * sg.w * c.lane, 430);
-      if (hand) { sx = hand.x; sy = hand.y; c.throwT = 0.5; }
+    const inView = zz => zz - position > 900 && zz - position < 7000;
+    const throwers = [];
+    for (const c of cyclists) if (c.side === side && inView(c.z)) {
+      const sg = segAt(c.z);
+      throwers.push(() => { c.throwT = 0.5; return toScreen(c.z, -c.side * sg.w * c.lane, 430); });
+    }
+    const pi = Math.floor(position / SEG_LEN);
+    for (let i = pi + 4; i < pi + 36; i++) {
+      const sg = segs[i];
+      if (sg && sg.terrace && i % 2 === 0 && inView(terraceZ(sg))) throwers.push(() => { sg.throwAt = runMs / 1000; return toScreen(terraceZ(sg), terraceX(sg), 950); });
+    }
+    for (const tr of trucks) if (tr.march && inView(tr.z)) {
+      const j = Math.floor(Math.random() * 11), zj = tr.z + (j - 5) * SPRAY_LEN * 0.17, sg = segAt(zj);
+      throwers.push(() => { tr.throwJ = j; tr.throwT = 0.5; return toScreen(zj, sg.side * (-sg.w + 0.1), 950); });
+    }
+    if (throwers.length && Math.random() < 0.8) {
+      const hand = throwers[Math.floor(Math.random() * throwers.length)]();
+      if (hand) { sx = hand.x; sy = hand.y; }
     }
     molotovs.push({ sx, sy, z, x, t: 0, T, spin: Math.random() * 6 });
     sfx.play('throw', T);
@@ -992,7 +1005,7 @@
       cleanT -= dt;
       if (cleanT <= 0) { spawnCleaner(); cleanT = 16 + Math.random() * 12; }
     }
-    for (const tr of trucks) { tr.z += tr.v * dt; tr.t += dt; }
+    for (const tr of trucks) { tr.z += tr.v * dt; tr.t += dt; if (tr.throwT) tr.throwT = Math.max(0, tr.throwT - dt); }
     // dawdling below 80% pace for a while makes the pigeons gather: up to 3× as many
     if (pace < 0.8) slowT += dt; else slowT = Math.max(0, slowT - dt * 2);
     const flock = slowT > 2 ? 1 + Math.min((slowT - 2) / 3, 1) * 2 : 1;
@@ -1258,7 +1271,7 @@
       for (let j = 0; j < 11; j++) {
         const zj = tr.z + (j - 5) * SPRAY_LEN * 0.17, sg = segAt(zj), r = seatRand(tr.seed, j);
         const xj = sg.side * (-sg.w + Math.max(0.05, wetReach(tr, zj)) * (0.25 + 0.6 * r) - (j % 3 === 0 ? 0.35 : 0));
-        add(zj, () => drawLooter(toScreen(zj, xj), tr.seed + j * 7.1, tr.t, false));
+        add(zj, () => drawLooter(toScreen(zj, xj), tr.seed + j * 7.1, tr.t, false, tr.throwT > 0 && tr.throwJ === j ? { throwing: 1 - tr.throwT / 0.5 } : {}));
       }
     }
     for (const st of stains) add(st.z, () => drawStain(toScreen(st.z, st.x), st.seed));
@@ -2005,7 +2018,7 @@
     if (!p) return;
     const r = v => { const x = Math.sin(seed * 12.9898 + v * 78.233) * 43758.5453; return x - Math.floor(x); };
     const Hh = 560 * p.k * (0.9 + 0.2 * r(1)), coat = LOOTER_COATS[Math.floor(r(2) * LOOTER_COATS.length)];
-    const prop = o.smash ? 1 : o.carry === false ? -1 : o.walk ? r(4) * 0.8 : r(4);         // someone hauling loot holds loot
+    const prop = o.smash || o.throwing !== undefined ? 1 : o.carry === false ? -1 : o.walk ? r(4) * 0.8 : r(4);         // someone hauling loot holds loot
     const run = o.walk ? Math.sin(t * 9 + seed) * Hh * 0.045 : front ? Math.sin(t * 3 + seed) * Hh * 0.015 : Math.sin(t * 11 + seed) * Hh * 0.06;
     const bob = o.walk ? Math.abs(Math.sin(t * 9 + seed)) * Hh * 0.015 : front ? 0 : Math.abs(Math.sin(t * 11 + seed)) * Hh * 0.03;
     ctx.save(); ctx.translate(p.x, p.y);
@@ -2033,6 +2046,10 @@
     ctx.strokeStyle = coat; ctx.lineWidth = Hh * 0.06; ctx.lineCap = 'round';
     if (prop < 0) {                                                                       // empty-handed, arms swinging
       for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sd * Hh * 0.16, -Hh * 0.76); ctx.lineTo(sd * Hh * 0.19, -Hh * 0.48 + sd * run * 0.8); ctx.stroke(); }
+    } else if (o.throwing !== undefined) {                                                // arm flung up and out, toward the walker
+      const u = o.throwing, ax = -Hh * (0.2 + 0.12 * u), ay = -Hh * (1.15 - 0.25 * u);
+      ctx.beginPath(); ctx.moveTo(Hh * 0.15, -Hh * 0.76); ctx.lineTo(Hh * 0.2, -Hh * 0.48); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-Hh * 0.13, -Hh * 0.76); ctx.lineTo(ax, ay); ctx.stroke();
     } else if (o.smash) {                                                                 // wind up slowly, strike hard, rest
       const s = (t * 1.4 + seed) % 1;
       const a = s < 0.65 ? -0.5 - 1.9 * (s / 0.65) : s < 0.75 ? -2.4 + 2.9 * ((s - 0.65) / 0.1) : 0.5;
@@ -2076,7 +2093,9 @@
   function drawLooterGroup(p, seed, S = 1) {
     if (!p) return;
     const cw = 0.12 * ROAD_W * p.k, t = runMs / 1000;
-    drawLooter({ ...p, x: p.x + S * cw * 1.1, y: p.y - 6 * p.k }, seed * 3.7, t, false, { smash: true, flip: S < 0 });
+    const sg = segs[seed], thrown = sg && sg.throwAt !== undefined ? t - sg.throwAt : 9;   // just threw a Molotov at the walker?
+    drawLooter({ ...p, x: p.x + S * cw * 1.1, y: p.y - 6 * p.k }, seed * 3.7, t, thrown < 0.6 ? true : false,
+      thrown < 0.6 ? { throwing: thrown / 0.6, flip: S < 0 } : { smash: true, flip: S < 0 });
     for (const j of [1, 2]) {
       const ph = (t / 3.4 + j * 0.5 + seed * 0.13) % 1, sd = seed * 3.7 + j;
       if (ph < 0.42) {
