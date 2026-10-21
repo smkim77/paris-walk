@@ -2110,44 +2110,61 @@
     drawJumpCooldown(x, y0 - Hh * 1.1);
     if (invuln > 0 && Math.floor(invuln * 10) % 2 === 0) { playerScreen = { x, y: y0, h: Hh }; return; }
     // legs and arms swing at the walking cadence, take longer strides the faster you go, and the
-    // whole body bobs on each step (barely at a stroll, a real bounce at a jog)
+    // whole body bobs on each step. From about 6.3 km/h the walk blends into a run (fully by ~8.5):
+    // heels kick up behind, arms bend at the elbow and pump, the body leans in and bounces higher.
     const kmh = walkKmh();
-    const sw = air > 0 ? 0 : Math.sin(gait) * Hh * (0.012 + 0.009 * kmh);
-    const bob = air > 0 ? 0 : Math.abs(Math.sin(gait)) * Hh * Math.max(0, kmh - 3) * 0.006;
-    const y = y0 - bob;
+    const amp = Hh * (0.012 + 0.009 * kmh);
+    const run = air > 0 ? 0 : Math.max(0, Math.min(1, (kmh - 6.3) / 2.2));
+    const sw = air > 0 ? 0 : Math.sin(gait) * amp;
+    const bob = air > 0 ? 0 : Math.abs(Math.sin(gait)) * Hh * (Math.max(0, kmh - 3) * 0.006 + run * 0.03);
+    const y = y0 - bob, lean = run * Hh * 0.03;
     playerScreen = { x, y, h: Hh };
     ctx.fillStyle = `rgba(0,0,0,${0.22 - air * 0.1})`;
     ctx.beginPath(); ctx.ellipse(x, gy, Hh * 0.2 * (1 - air * 0.35), Hh * 0.05 * (1 - air * 0.35), 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#2d3138';
-    ctx.fillRect(x - Hh * 0.1, y - Hh * 0.38 - sw, Hh * 0.08, Hh * 0.36);
-    ctx.fillRect(x + Hh * 0.02, y - Hh * 0.38 + sw, Hh * 0.08, Hh * 0.36);
-    ctx.fillStyle = '#3a2416';
-    ctx.beginPath(); ctx.ellipse(x - Hh * 0.06, y - Hh * 0.02 - sw, Hh * 0.055, Hh * 0.03, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(x + Hh * 0.06, y - Hh * 0.02 + sw, Hh * 0.055, Hh * 0.03, 0, 0, Math.PI * 2); ctx.fill();
+    for (const side of [-1, 1]) {
+      const ph = gait + (side < 0 ? 0 : Math.PI);
+      const shift = air > 0 ? 0 : -(1 - run) * Math.sin(ph) * amp;      // walking: the leg slides up and down
+      const kick = run * Math.max(0, Math.sin(ph));                       // running: this heel flicks up behind
+      const top = y - Hh * 0.38 - shift, len = Hh * 0.36 * (1 - 0.5 * kick);
+      ctx.fillStyle = '#2d3138';
+      ctx.fillRect(x + (side < 0 ? -0.1 : 0.02) * Hh, top, Hh * 0.08, len);
+      ctx.fillStyle = kick > 0.3 ? '#5a4232' : '#3a2416';                 // a kicked-up shoe shows its sole
+      ctx.beginPath(); ctx.ellipse(x + side * Hh * 0.06, top + len - Hh * 0.02, Hh * 0.055, Hh * (0.03 + 0.03 * kick), 0, 0, Math.PI * 2); ctx.fill();
+    }
     const muddy = 3 - lives;
     if (muddy) {
       ctx.fillStyle = '#6b4423';
       for (let i = 0; i < muddy; i++) { ctx.beginPath(); ctx.arc(x + (i % 2 ? 1 : -1) * Hh * 0.06, y - Hh * 0.03, Hh * 0.025, 0, Math.PI * 2); ctx.fill(); }
     }
-    // trench coat with belt, swinging arms
+    // trench coat with belt (leaning in a little when running), then the arms: straight and swinging
+    // at a walk, bent at the elbow and pumping at a run
+    const yt = y + lean;
     ctx.fillStyle = '#b8955f';
-    ctx.beginPath(); ctx.moveTo(x - Hh * 0.15, y - Hh * 0.8); ctx.lineTo(x + Hh * 0.15, y - Hh * 0.8); ctx.lineTo(x + Hh * 0.18, y - Hh * 0.34); ctx.lineTo(x - Hh * 0.18, y - Hh * 0.34); ctx.closePath(); ctx.fill();
-    ctx.fillRect(x - Hh * 0.22, y - Hh * 0.78 + sw, Hh * 0.07, Hh * 0.3);
-    ctx.fillRect(x + Hh * 0.15, y - Hh * 0.78 - sw, Hh * 0.07, Hh * 0.3);
-    ctx.fillStyle = '#9c7c4b'; ctx.fillRect(x - Hh * 0.16, y - Hh * 0.56, Hh * 0.32, Hh * 0.03);
-    ctx.fillRect(x - Hh * 0.005, y - Hh * 0.53, Hh * 0.01, Hh * 0.19);
-    // scarf, head, beret
+    ctx.beginPath(); ctx.moveTo(x - Hh * 0.15, yt - Hh * 0.8); ctx.lineTo(x + Hh * 0.15, yt - Hh * 0.8); ctx.lineTo(x + Hh * 0.18, y - Hh * 0.34); ctx.lineTo(x - Hh * 0.18, y - Hh * 0.34); ctx.closePath(); ctx.fill();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const side of [-1, 1]) {
+      const armSw = (side < 0 ? 1 : -1) * (air > 0 ? 0 : Math.sin(gait)) * amp * (1 - run * 0.35);
+      const ax = x + side * Hh * 0.185, sy = yt - Hh * 0.76 + armSw * (1 - run);
+      const ey = sy + Hh * 0.14 + armSw * run * 0.5;
+      const hx = ax - side * Hh * 0.09 * run, hy = ey + Hh * 0.14 * (1 - run) - Hh * 0.02 * run + armSw * run;
+      ctx.strokeStyle = '#b8955f'; ctx.lineWidth = Hh * 0.07;
+      ctx.beginPath(); ctx.moveTo(ax, sy); ctx.lineTo(ax, ey); ctx.lineTo(hx, hy); ctx.stroke();
+      ctx.fillStyle = '#e8b98f';
+      ctx.beginPath(); ctx.arc(hx, hy + Hh * 0.03 * (1 - run), Hh * 0.028, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = '#9c7c4b'; ctx.fillRect(x - Hh * 0.16, y - Hh * 0.56 + lean * 0.5, Hh * 0.32, Hh * 0.03);
+    ctx.fillRect(x - Hh * 0.005, y - Hh * 0.53 + lean * 0.5, Hh * 0.01, Hh * 0.19);
+    // scarf (its tail flaps when running), head, beret
+    const flap = run * Math.sin(gait * 2) * Hh * 0.035;
     ctx.fillStyle = '#c8372d';
-    ctx.fillRect(x - Hh * 0.09, y - Hh * 0.83, Hh * 0.18, Hh * 0.05);
-    ctx.fillRect(x + Hh * 0.03, y - Hh * 0.8, Hh * 0.05, Hh * 0.14);
+    ctx.fillRect(x - Hh * 0.09, yt - Hh * 0.83, Hh * 0.18, Hh * 0.05);
+    ctx.fillRect(x + Hh * 0.03 + flap, yt - Hh * 0.8, Hh * 0.05, Hh * (0.14 - run * 0.03));
     ctx.fillStyle = '#3b2a20';
-    ctx.beginPath(); ctx.arc(x, y - Hh * 0.9, Hh * 0.085, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, yt - Hh * 0.9, Hh * 0.085, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#1b1e24';
-    ctx.beginPath(); ctx.ellipse(x, y - Hh * 0.97, Hh * 0.1, Hh * 0.045, -0.15, 0, Math.PI * 2); ctx.fill();
-    ctx.fillRect(x - Hh * 0.008, y - Hh * 1.03, Hh * 0.016, Hh * 0.03);
+    ctx.beginPath(); ctx.ellipse(x, yt - Hh * 0.97, Hh * 0.1, Hh * 0.045, -0.15, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(x - Hh * 0.008, yt - Hh * 1.03, Hh * 0.016, Hh * 0.03);
   }
-
-  // jump cooldown: a small bar floating over the walker's head while it recharges
   function drawJumpCooldown(cx, cy) {
     if (jumpCd <= 0 || state === 'idle') return;
     const w = 54, h = 7, t = 1 - jumpCd / JUMP_COOLDOWN;
