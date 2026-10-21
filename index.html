@@ -95,8 +95,12 @@
   /* hard mode: a smoky red street sign and a badge */
   .hard .sign { background: #7a2a1f; border-color: #f2c9a0; outline-color: #7a2a1f; }
   .hard .sign h1::after { content: ' 🔥 HARD'; font-family: var(--font-data); font-size: 0.75rem; letter-spacing: 0.1em; vertical-align: middle; color: #ffd27a; }
-  .overlay button.hard-btn { background: #8c2a1f; border-color: #f2c9a0; outline-color: #8c2a1f; }
-  .overlay button.hard-btn:hover { background: #a8352a; }
+  /* difficulty picker: 일반 / 하드, one segmented control on the start and game-over screens */
+  .diff { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
+  .diff .tabs { border-color: rgba(233,238,245,0.7); }
+  .overlay .diff .tabs button { padding: 6px 20px; font-size: 1rem; }
+  .overlay .diff .tabs button[aria-checked="true"] { background: #e9eef5; color: #1d3b6e; }
+  .overlay .diff .tabs button[data-mode="hard"][aria-checked="true"] { background: #a8352a; color: #fff; }
   .hard-note { font-size: 0.85rem; color: #ffc89a; }
   .nick { font: inherit; font-size: 1.05rem; padding: 8px 12px; border-radius: 6px; border: 2px solid var(--sign-edge); width: min(240px, 100%); text-align: center; }
 </style>
@@ -126,11 +130,14 @@
       <p>구석으로 비켜 걸어도 소용없어요. 벽 쪽엔 카페 테라스, 연석 쪽엔 살수차 물줄기가 있고, 한쪽에 오래 붙어 있으면 바로 앞에 행인이 나타납니다.</p>
       <p>서둘러 걸을수록 점수 배율이 올라가요. 느긋하게 걸으면 안전하지만 점수가 적고, 비둘기들이 노리기 시작합니다.</p>
       <p class="keys">← → / A D 좌우 이동 (좌우 드래그)<br>↑ ↓ / W S 걷는 속도 (위아래 드래그)<br>Space 점프 (탭)<br>P 일시 정지 (II 버튼)<br>M 소리 켜기/끄기 (🔊 버튼)</p>
-      <p class="hard-note">🔥 하드 모드: 폭동이 번진 날의 파리. 불타는 쓰레기통과 날아드는 화염병, 약탈자 무리까지 피해 가야 해요. 하드 모드 기록은 순위에 올라가지 않아요.</p>
-      <div class="row">
-        <button id="startBtn" type="button">산책 시작</button>
-        <button id="hardBtn" class="hard-btn" type="button">하드 모드 🔥</button>
+      <div class="diff">난이도
+        <div class="tabs" role="radiogroup" aria-label="난이도">
+          <button type="button" role="radio" data-mode="normal" aria-checked="true">일반</button>
+          <button type="button" role="radio" data-mode="hard" aria-checked="false">하드 🔥</button>
+        </div>
       </div>
+      <p class="hard-note" hidden>🔥 폭동이 번진 날의 파리. 불타는 쓰레기통과 날아드는 화염병, 약탈자 무리까지 피해 가야 해요. 하드 모드 기록은 순위에 올라가지 않아요.</p>
+      <button id="startBtn" type="button">산책 시작</button>
       <div class="row lb-only" hidden>
         <button class="ghost" id="boardBtn" type="button">🏆 순위 보기</button>
         <button class="ghost" id="profileBtn" type="button">프로필</button>
@@ -143,8 +150,13 @@
       <p id="overMsg"></p>
       <p class="lb-status lb-only" id="lbStatus" hidden></p>
       <button class="ghost lb-only" id="lbActionBtn" type="button" hidden>닉네임 정하고 기록 올리기</button>
+      <div class="diff">난이도
+        <div class="tabs" role="radiogroup" aria-label="난이도">
+          <button type="button" role="radio" data-mode="normal" aria-checked="true">일반</button>
+          <button type="button" role="radio" data-mode="hard" aria-checked="false">하드 🔥</button>
+        </div>
+      </div>
       <button id="retryBtn" type="button">다시 걷기</button>
-      <button class="ghost" id="switchBtn" type="button">하드 모드로 걷기 🔥</button>
       <button class="ghost lb-only" id="overBoardBtn" type="button" hidden>🏆 순위 보기</button>
     </div>
     <div class="overlay panel" id="boardScreen" hidden>
@@ -937,7 +949,6 @@
     $('overMsg').textContent = msg;
     $('overScreen').hidden = false;
     $('retryBtn').focus();
-    $('switchBtn').textContent = hard ? '보통 모드로 걷기' : '하드 모드로 걷기 🔥';
     if (hard) { $('lbStatus').hidden = false; $('lbStatus').textContent = '하드 모드 기록은 순위에 올라가지 않아요.'; }
     else lbGameOver({ score: sc, dist: d, place: placeAt(dist), duration: Math.round(runMs) });
   }
@@ -2455,10 +2466,27 @@
   });
   canvas.addEventListener('pointercancel', () => { drag = null; });
 
-  $('startBtn').addEventListener('click', () => start(false));
-  $('hardBtn').addEventListener('click', () => start(true));
+  $('startBtn').addEventListener('click', () => start(hard));
   $('retryBtn').addEventListener('click', () => start(hard));
-  $('switchBtn').addEventListener('click', () => start(!hard));
+  // difficulty: picking one shows its look (red sign), its best score and, for hard, what to expect;
+  // the choice is remembered for next time
+  function setMode(h) {
+    hard = h;
+    document.body.classList.toggle('hard', hard);
+    loadBest();
+    for (const b of document.querySelectorAll('.diff [role="radio"]')) b.setAttribute('aria-checked', String((b.dataset.mode === 'hard') === hard));
+    for (const n of document.querySelectorAll('.hard-note')) n.hidden = !hard;
+    try { localStorage.setItem('ppd-mode', hard ? 'hard' : 'normal'); } catch (e) {}
+  }
+  for (const b of document.querySelectorAll('.diff [role="radio"]')) {
+    b.addEventListener('click', () => setMode(b.dataset.mode === 'hard'));
+    b.addEventListener('keydown', e => {                       // arrow keys move between the two options
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); setMode(!hard); b.parentElement.querySelector('[aria-checked="true"]').focus(); }
+    });
+  }
+  let savedMode = 'normal';
+  try { savedMode = localStorage.getItem('ppd-mode') || 'normal'; } catch (e) {}
+  setMode(savedMode === 'hard');
 
   // ---------- scoreboard (Supabase) ----------
   // Fill in the Supabase project's URL and publishable (anon) key. The publishable key is
