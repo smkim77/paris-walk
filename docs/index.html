@@ -133,7 +133,7 @@
       <p>구석으로 비켜 걸어도 소용없어요. 벽 쪽엔 카페 테라스, 연석 쪽엔 살수차 물줄기가 있고, 한쪽에 오래 붙어 있으면 바로 앞에 행인이 나타납니다.</p>
       <p>서둘러 걸을수록 점수 배율이 올라가요. 느긋하게 걸으면 안전하지만 점수가 적고, 비둘기들이 노리기 시작합니다.</p>
       <p class="keys">← → / A D 좌우 이동 (좌우 드래그)<br>↑ ↓ / W S 걷는 속도 (위아래 드래그)<br>Space 점프 (탭)<br>P 일시 정지 (II 버튼)<br>M 소리 켜기/끄기 (🔊 버튼)</p>
-      <p class="hard-note">🔥 하드 모드: 시위로 들끓는 날의 파리. 불타는 쓰레기통과 날아드는 화염병까지 피해 가야 해요. 하드 모드 기록은 순위에 올라가지 않아요.</p>
+      <p class="hard-note">🔥 하드 모드: 폭동이 번진 날의 파리. 불타는 쓰레기통과 날아드는 화염병, 약탈자 무리까지 피해 가야 해요. 하드 모드 기록은 순위에 올라가지 않아요.</p>
       <div class="row">
         <button id="startBtn" type="button">산책 시작</button>
         <button id="hardBtn" class="hard-btn" type="button">하드 모드 🔥</button>
@@ -309,7 +309,7 @@
 
   // ---------- state ----------
   let best = 0;
-  let hard = false; // hard mode: protest day, with fire on the streets; it keeps its own best score
+  let hard = false; // hard mode: a riot, with fire on the streets and looters about; it keeps its own best score
   const bestKey = () => hard ? 'ppd-best-hard' : 'ppd-best-score';
   function loadBest() {
     try { best = Number(localStorage.getItem(bestKey())) || 0; } catch (e) { best = 0; }
@@ -733,7 +733,7 @@
     // only where the street keeps the same side for as long as the truck will be in view
     const z = PZ() + 9000 + Math.random() * 3000, side = segAt(z).side;
     for (let d = 0; d <= 16000; d += 600) { const sg = segAt(z + d); if (sg.side !== side || sg.flipX) return; }
-    trucks.push({ z, v: 450 + Math.random() * 150, t: 0, march: hard, seed: Math.random() * 100 });   // hard mode: a protest march instead
+    trucks.push({ z, v: 450 + Math.random() * 150, t: 0, march: hard, seed: Math.random() * 100 });   // hard mode: a gang of looters running up the street instead
   }
   const SPRAY_LEN = 650, SPRAY_REACH = 0.42; // spray covers ±650 units around the truck, up to 0.42 road units in from the curb
   // how far the wet patch reaches in from the curb at world z: widest beside the truck, tapering
@@ -850,7 +850,7 @@
       const s = segs[i];
       // only tables where somebody is actually sitting (same rule as drawSitter)
       if (!s || !s.terrace || i % 2) continue;
-      const people = hard ? 2 : (seatRand(i, -1) < 0.6) + (seatRand(i, 1) < 0.6);   // hard mode: a knot of protesters
+      const people = hard ? 2 : (seatRand(i, -1) < 0.6) + (seatRand(i, 1) < 0.6);   // hard mode: a gang of looters
       if (people) chatter = Math.max(chatter, near(terraceZ(s) - pz, 4000) * (people === 2 ? 1 : 0.7));
     }
     let fire = 0, firePan = 0;
@@ -1124,7 +1124,7 @@
         if (!s || !s.terrace || i % 2) continue;
         if (Math.abs(terraceZ(s) - pz) > reach + 60) continue;
         if (Math.abs(playerX - terraceX(s)) < TERRACE_HALF + 0.06) {
-          if (hard ? takeHit('시위대와 부딪혔다!', 'rgba(200,60,40,0.4)', 'grumble') : takeHit('Attention! 테라스!', 'rgba(140,42,42,0.35)', 'crash')) return;
+          if (hard ? takeHit('약탈자와 부딪혔다!', 'rgba(200,60,40,0.4)', 'grumble') : takeHit('Attention! 테라스!', 'rgba(140,42,42,0.35)', 'crash')) return;
           break;
         }
       }
@@ -1145,7 +1145,7 @@
     if (invuln <= 0) {
       for (const tr of trucks) {
         if (pseg.side * playerX < -pseg.w + wetReach(tr, pz)) {
-          if (tr.march ? takeHit('시위 행렬에 휩쓸렸다!', 'rgba(200,60,40,0.4)', 'grumble') : takeHit('살수차 물벼락!', 'rgba(111,160,200,0.45)', 'spray')) return;
+          if (tr.march ? takeHit('약탈자 무리에 휩쓸렸다!', 'rgba(200,60,40,0.4)', 'grumble') : takeHit('살수차 물벼락!', 'rgba(111,160,200,0.45)', 'spray')) return;
           break;
         }
       }
@@ -1247,16 +1247,16 @@
       // bridge lamps on both parapets; the square's fountain or obelisk out in the open
       if (s.kind === 'bridge' && s.k % 8 === 4) for (const u of [1.08, -BRIDGE_ROAD]) add(zc + 3, () => drawLamp(toScreen(zc + 3, S * s.w * u)));
       if (s.feature) add(zc, () => (s.feature === 'fountain' ? drawFountain : drawObelisk)(toScreen(zc, S * s.w * 3.2)));
-      if (s.terrace && s.i % 2 === 0) add(terraceZ(s), () => (hard ? drawProtestGroup : drawTerrace)(toScreen(terraceZ(s), terraceX(s)), s.i));
+      if (s.terrace && s.i % 2 === 0) add(terraceZ(s), () => (hard ? drawLooterGroup : drawTerrace)(toScreen(terraceZ(s), terraceX(s)), s.i));
     }
     for (const tr of trucks) {
       if (!tr.march) { add(tr.z, () => drawCleaner(tr)); continue; }
-      // the march: a loose column along the curb, spilling into the road, filling the same stretch
-      // the cleaner's spray would (so it is dodged the same way)
+      // the looters: a loose pack running along the curb, spilling into the road, filling the same
+      // stretch the cleaner's spray would (so it is dodged the same way)
       for (let j = 0; j < 11; j++) {
         const zj = tr.z + (j - 5) * SPRAY_LEN * 0.17, sg = segAt(zj), r = seatRand(tr.seed, j);
         const xj = sg.side * (-sg.w + Math.max(0.05, wetReach(tr, zj)) * (0.25 + 0.6 * r) - (j % 3 === 0 ? 0.35 : 0));
-        add(zj, () => drawProtester(toScreen(zj, xj), tr.seed + j * 7.1, tr.t, false));
+        add(zj, () => drawLooter(toScreen(zj, xj), tr.seed + j * 7.1, tr.t, false));
       }
     }
     for (const st of stains) add(st.z, () => drawStain(toScreen(st.z, st.x), st.seed));
@@ -1422,6 +1422,15 @@
         wallQ('#16110e', 0.3, 0.7, 1.04, fh, fh + 360);                                    // gutted windows
         if ((seg.i + fh / 500) % 2 < 1) wallQ(`rgba(255,${120 + Math.floor(40 * Math.sin(t * 6 + seg.i))},40,0.75)`, 0.36, 0.64, 1.04, fh + 60, fh + 300);
         wallQ('rgba(10,8,8,0.55)', 0.25, 0.75, 1.04, fh + 360, fh + 520);                 // black tongues above them
+      }
+      if (kk > 0.01) for (const fh of [1150, 1650, 2150]) {                                   // fire licking out of the windows, all the way up
+        if ((seg.i * 7 + fh / 250) % 3 >= 2) continue;
+        const [wx, wy] = P(0.5, 1.04, fh + 330);
+        for (let j = 0; j < 2; j++) flame(wx + (j - 0.5) * 90 * kk, wy, 170 * kk, (380 + 120 * Math.sin(t * 3 + seg.i + fh + j)) * kk, t * 9 + j * 2.3 + seg.i + fh * 0.01);
+      }
+      if (kk > 0.01 && seg.i % 2 === 0) {                                                       // and through the roof
+        const [rx, ry] = P(0.5, 1.1, ROOF_H);
+        for (let j = 0; j < 3; j++) flame(rx + (j - 1) * 120 * kk, ry, 200 * kk, (520 + 160 * Math.sin(j * 1.7 + seg.i)) * kk, t * 7 + j * 1.6 + seg.i);
       }
       wallQ('#16110e', 0.12, 0.88, 1.04, 60, 640);
       if (kk > 0.01) {
@@ -1972,71 +1981,66 @@
     ctx.fillRect(p.x + 33 * k, p.y - 760 * k, 39 * k, 10 * k);
   }
 
-  // a protester: hoodie or yellow vest, holding up a placard, a flag or a red flare; seen from
-  // behind (marching up the street) or from the front (gathered by the wall, chanting)
-  const PROTEST_COATS = ['#2a2c30', '#3d4752', '#4a3b33', '#5d2a2a', '#2f3f35', '#d9c53a'];
-  function drawProtester(p, seed, t, front) {
+  // a looter: dark hoodie with the hood up, face covered, making off with something: a boxed TV,
+  // bulging shopping bags, a stack of shoe boxes, or a crowbar. Seen from behind (running up the
+  // street with the pack) or from the front (carrying the goods out of a shop by the wall).
+  const LOOTER_COATS = ['#1b1e24', '#2a2c30', '#33363d', '#3a3330', '#2b3340', '#4a4f57'];
+  function drawLooter(p, seed, t, front) {
     if (!p) return;
     const r = v => { const x = Math.sin(seed * 12.9898 + v * 78.233) * 43758.5453; return x - Math.floor(x); };
-    const Hh = 560 * p.k * (0.9 + 0.2 * r(1)), coat = PROTEST_COATS[Math.floor(r(2) * PROTEST_COATS.length)];
-    const vest = coat !== '#d9c53a' && r(3) < 0.3, prop = r(4), walk = front ? 0 : Math.sin(t * 7 + seed) * Hh * 0.03;
-    const pump = front ? Math.max(0, Math.sin(t * 5 + seed)) * Hh * 0.08 : 0;            // chanting: the sign bobs
+    const Hh = 560 * p.k * (0.9 + 0.2 * r(1)), coat = LOOTER_COATS[Math.floor(r(2) * LOOTER_COATS.length)], prop = r(4);
+    const run = front ? Math.sin(t * 3 + seed) * Hh * 0.015 : Math.sin(t * 11 + seed) * Hh * 0.06;   // a shuffle, or a sprint
+    const bob = front ? 0 : Math.abs(Math.sin(t * 11 + seed)) * Hh * 0.03;
     ctx.save(); ctx.translate(p.x, p.y);
     ctx.fillStyle = 'rgba(0,0,0,0.2)';
     ctx.beginPath(); ctx.ellipse(0, 0, Hh * 0.2, Hh * 0.2 * p.flat, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#23262c';                                                            // legs
-    ctx.fillRect(-Hh * 0.08, -Hh * 0.42 + walk, Hh * 0.07, Hh * 0.42 - walk);
-    ctx.fillRect(Hh * 0.01, -Hh * 0.42 - walk, Hh * 0.07, Hh * 0.42 + walk);
-    ctx.fillStyle = coat;                                                                 // body
-    ctx.beginPath(); ctx.moveTo(-Hh * 0.14, -Hh * 0.82); ctx.lineTo(Hh * 0.14, -Hh * 0.82); ctx.lineTo(Hh * 0.16, -Hh * 0.38); ctx.lineTo(-Hh * 0.16, -Hh * 0.38); ctx.closePath(); ctx.fill();
-    if (vest) {                                                                           // gilet jaune
-      ctx.fillStyle = '#e3d23c'; ctx.fillRect(-Hh * 0.13, -Hh * 0.78, Hh * 0.26, Hh * 0.36);
-      ctx.fillStyle = '#b9bcc2'; ctx.fillRect(-Hh * 0.13, -Hh * 0.55, Hh * 0.26, Hh * 0.03);
+    ctx.translate(0, -bob);
+    ctx.fillStyle = '#202328';                                                            // legs
+    ctx.fillRect(-Hh * 0.08, -Hh * 0.42 + run, Hh * 0.07, Hh * 0.42 - run);
+    ctx.fillRect(Hh * 0.01, -Hh * 0.42 - run, Hh * 0.07, Hh * 0.42 + run);
+    ctx.fillStyle = '#e8e4d8';                                                            // white trainers
+    ctx.fillRect(-Hh * 0.09, -Hh * 0.03 + Math.min(0, run), Hh * 0.09, Hh * 0.03);
+    ctx.fillRect(Hh * 0.0, -Hh * 0.03 + Math.min(0, -run), Hh * 0.09, Hh * 0.03);
+    ctx.fillStyle = coat;                                                                 // hoodie
+    ctx.beginPath(); ctx.moveTo(-Hh * 0.15, -Hh * 0.8); ctx.lineTo(Hh * 0.15, -Hh * 0.8); ctx.lineTo(Hh * 0.16, -Hh * 0.38); ctx.lineTo(-Hh * 0.16, -Hh * 0.38); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = front ? '#c99a74' : coat;                                             // hood up; from the front, a masked face
+    ctx.beginPath(); ctx.arc(0, -Hh * 0.9, Hh * 0.085, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = coat;
+    ctx.beginPath(); ctx.arc(0, -Hh * 0.92, Hh * 0.095, Math.PI * 0.95, Math.PI * 2.05); ctx.fill();
+    if (front) {
+      ctx.fillStyle = '#111'; ctx.fillRect(-Hh * 0.07, -Hh * 0.9, Hh * 0.14, Hh * 0.07);   // mask over nose and mouth
+      ctx.fillStyle = '#e8e4d8'; ctx.fillRect(-Hh * 0.045, -Hh * 0.935, Hh * 0.025, Hh * 0.012); ctx.fillRect(Hh * 0.02, -Hh * 0.935, Hh * 0.025, Hh * 0.012);
     }
-    ctx.fillStyle = coat;                                                                 // the free arm, hanging
-    ctx.fillRect(-Hh * 0.2, -Hh * 0.78, Hh * 0.06, Hh * 0.3);
-    ctx.fillStyle = front ? '#d9a77c' : '#3b2a20';                                        // head (a face only from the front)
-    ctx.beginPath(); ctx.arc(0, -Hh * 0.9, Hh * 0.08, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = r(5) < 0.5 ? coat : '#1b1e24';                                        // hood or hair
-    ctx.beginPath(); ctx.arc(0, -Hh * 0.92, Hh * 0.085, Math.PI, 0); ctx.fill();
-    if (front && r(5) >= 0.5) { ctx.fillStyle = '#e8e4d8'; ctx.fillRect(-Hh * 0.06, -Hh * 0.88, Hh * 0.12, Hh * 0.05); }   // a scarf over the face
-    // raised arm with what it holds
-    const hx = Hh * 0.17, hy = -Hh * 1.02 - pump;
-    ctx.strokeStyle = coat === '#d9c53a' ? '#b8a530' : coat; ctx.lineWidth = Hh * 0.06; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(Hh * 0.12, -Hh * 0.76); ctx.lineTo(hx, hy); ctx.stroke();
-    if (prop < 0.55) {                                                                    // placard on a stick
-      ctx.strokeStyle = '#8a6a48'; ctx.lineWidth = Hh * 0.02;
-      ctx.beginPath(); ctx.moveTo(hx, hy + Hh * 0.05); ctx.lineTo(hx, hy - Hh * 0.3); ctx.stroke();
-      ctx.fillStyle = r(6) < 0.5 ? '#efe6d2' : '#e8e4d8';
-      ctx.fillRect(hx - Hh * 0.2, hy - Hh * 0.52, Hh * 0.4, Hh * 0.26);
-      ctx.fillStyle = r(7) < 0.5 ? '#c8372d' : '#1b1e24';                               // slogan scrawl
-      for (let j = 0; j < 3; j++) ctx.fillRect(hx - Hh * 0.16, hy - Hh * (0.47 - j * 0.07), Hh * (0.18 + 0.14 * r(8 + j)), Hh * 0.035);
-    } else if (prop < 0.85) {                                                             // flag
-      ctx.strokeStyle = '#8a6a48'; ctx.lineWidth = Hh * 0.02;
-      ctx.beginPath(); ctx.moveTo(hx, hy + Hh * 0.05); ctx.lineTo(hx, hy - Hh * 0.5); ctx.stroke();
-      const wave = Math.sin(t * 6 + seed) * Hh * 0.04, cols = r(9) < 0.5 ? ['#c8372d', '#c8372d', '#c8372d'] : ['#1d3b6e', '#efe6d2', '#c8372d'];
-      for (let j = 0; j < 3; j++) {
-        ctx.fillStyle = cols[j];
-        ctx.beginPath(); ctx.moveTo(hx + j * Hh * 0.1, hy - Hh * 0.5 + (j ? wave * j / 2 : 0)); ctx.lineTo(hx + (j + 1) * Hh * 0.1, hy - Hh * 0.5 + wave * (j + 1) / 2);
-        ctx.lineTo(hx + (j + 1) * Hh * 0.1, hy - Hh * 0.3 + wave * (j + 1) / 2); ctx.lineTo(hx + j * Hh * 0.1, hy - Hh * 0.3 + (j ? wave * j / 2 : 0)); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = coat; ctx.lineWidth = Hh * 0.06; ctx.lineCap = 'round';
+    if (prop < 0.35) {                                                                    // a boxed flat-screen TV, hugged in both arms
+      const bw = Hh * 0.46, bh = Hh * 0.3, by = -Hh * 0.74;
+      ctx.fillStyle = '#c8a170'; ctx.fillRect(-bw / 2, by, bw, bh);
+      ctx.strokeStyle = '#8a6a48'; ctx.lineWidth = Math.max(1, Hh * 0.012); ctx.strokeRect(-bw * 0.36, by + bh * 0.2, bw * 0.72, bh * 0.55);
+      ctx.fillStyle = '#1d3b6e'; ctx.fillRect(-bw * 0.3, by + bh * 0.08, bw * 0.24, bh * 0.1);
+      ctx.strokeStyle = coat; ctx.lineWidth = Hh * 0.06;
+      for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sd * Hh * 0.15, -Hh * 0.76); ctx.lineTo(sd * bw * 0.5, by + bh * 0.6); ctx.stroke(); }
+    } else if (prop < 0.6) {                                                              // bulging shopping bags, one in each hand
+      for (const sd of [-1, 1]) {
+        ctx.beginPath(); ctx.moveTo(sd * Hh * 0.16, -Hh * 0.76); ctx.lineTo(sd * Hh * 0.22, -Hh * 0.5 + sd * run * 0.5); ctx.stroke();
+        ctx.fillStyle = sd < 0 ? '#e8e4d8' : '#c8372d';
+        ctx.beginPath(); ctx.roundRect(sd * Hh * 0.22 - Hh * 0.08, -Hh * 0.5 + sd * run * 0.5, Hh * 0.16, Hh * 0.2, Hh * 0.03); ctx.fill();
       }
-    } else {                                                                              // red flare with smoke
-      ctx.fillStyle = 'rgba(255,60,40,0.35)';
-      ctx.beginPath(); ctx.arc(hx, hy - Hh * 0.05, Hh * 0.12, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ff5a3a'; ctx.beginPath(); ctx.arc(hx, hy - Hh * 0.05, Hh * 0.04, 0, Math.PI * 2); ctx.fill();
-      for (let j = 0; j < 3; j++) {
-        const u = (t * 0.6 + j / 3) % 1;
-        ctx.fillStyle = `rgba(214,90,80,${0.4 * (1 - u)})`;
-        ctx.beginPath(); ctx.arc(hx + u * Hh * 0.3, hy - Hh * (0.15 + u * 0.7), Hh * (0.06 + u * 0.14), 0, Math.PI * 2); ctx.fill();
-      }
+    } else if (prop < 0.8) {                                                              // a stack of shoe boxes
+      for (let j = 0; j < 3; j++) { ctx.fillStyle = ['#e8742b', '#f2f2f2', '#1b1e24'][j]; ctx.fillRect(-Hh * 0.16 + j * Hh * 0.01, -Hh * (0.62 + j * 0.09), Hh * 0.3, Hh * 0.085); }
+      for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sd * Hh * 0.15, -Hh * 0.76); ctx.lineTo(sd * Hh * 0.17, -Hh * 0.58); ctx.stroke(); }
+    } else {                                                                              // a crowbar, brandished
+      ctx.beginPath(); ctx.moveTo(-Hh * 0.15, -Hh * 0.76); ctx.lineTo(-Hh * 0.2, -Hh * 0.48); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(Hh * 0.13, -Hh * 0.76); ctx.lineTo(Hh * 0.2, -Hh * 0.98); ctx.stroke();
+      ctx.strokeStyle = '#8c2a2a'; ctx.lineWidth = Math.max(1, Hh * 0.025);
+      ctx.beginPath(); ctx.moveTo(Hh * 0.2, -Hh * 0.98); ctx.lineTo(Hh * 0.32, -Hh * 1.26); ctx.lineTo(Hh * 0.27, -Hh * 1.3); ctx.stroke();
     }
     ctx.restore();
   }
-  // hard mode: where the café tables would be, a knot of protesters by the wall, chanting
-  function drawProtestGroup(p, seed) {
+  // hard mode: where the café tables would be, a gang of looters by the wall, hauling goods out
+  function drawLooterGroup(p, seed) {
     if (!p) return;
     const cw = 0.12 * ROAD_W * p.k;
-    for (const [dx, j] of [[-1, 0], [1, 1], [0, 2]]) drawProtester({ ...p, x: p.x + dx * cw, y: p.y - (j === 2 ? 0 : 6 * p.k) }, seed * 3.7 + j, runMs / 1000, true);
+    for (const [dx, j] of [[-1, 0], [1, 1], [0, 2]]) drawLooter({ ...p, x: p.x + dx * cw, y: p.y - (j === 2 ? 0 : 6 * p.k) }, seed * 3.7 + j, runMs / 1000, true);
   }
   // green Paris street-cleaning truck seen from behind, hosing the sidewalk edge
   function drawCleaner(tr) {
