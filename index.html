@@ -324,6 +324,13 @@
   let edgeT = 0, edgeSide = 0, cleanT = 0; // how long the walker has hugged one edge; street-cleaner timer
   // pace: the walker's own speed setting, from a slow stroll (0.6×) to a hurry (1.4×)
   const PACE_MIN = 0.6, PACE_MAX = 1.4;
+  // the walking speed the readout shows: 4.5 km/h at the starting pace, gently compressed so the
+  // game's speed-up reads as a brisk walk to a jog (about 3–10 km/h) rather than a car's speed
+  const walkKmh = () => 4.5 * Math.pow(speed / SPEED0, 0.5);
+  // legs keep a real cadence for that speed: about 1.6 steps a second at a stroll, 1.8 at an easy
+  // walk, up to about 2.8 at a jog (one swing of sin() = two steps); gait is the leg phase
+  let gait = 0;
+  const cadence = () => 0.9 + 0.2 * walkKmh();
   const SPEED0 = 1050; // forward speed at the start, at normal pace: an easy walk that picks up with distance
   let pace = 1;
   // jump: Space hops over poop and pee for a moment; another jump only after the cooldown
@@ -639,7 +646,7 @@
 
   function reset() {
     resetTrack();
-    position = 0; speed = SPEED0; pace = 1; jumpT = 0; jumpCd = 0; dist = 0; lives = 3; invuln = 0; playerX = 0; step = 0; skyOffset = 0; shake = 0; flash = null;
+    position = 0; speed = SPEED0; pace = 1; jumpT = 0; jumpCd = 0; dist = 0; lives = 3; invuln = 0; playerX = 0; step = 0; gait = 0; skyOffset = 0; shake = 0; flash = null;
     poops = []; dogs = []; peers = []; birds = []; drops = []; stains = []; texts = []; trucks = [];
     cyclists = []; cycT = 0;
     fires = []; molotovs = []; fireT = 3; molotT = 3; wrecks = []; wreckT = 2;
@@ -929,6 +936,7 @@
     position += speed * dt;
     dist = position / UNITS_PER_M;
     step += dt * speed / 330;
+    gait += dt * Math.PI * cadence();
     runMs += dt * 1000;
     const pz = PZ(), pseg = segAt(pz);
 
@@ -2094,7 +2102,8 @@
     playerScreen = { x, y, h: Hh };
     drawJumpCooldown(x, y - Hh * 1.1);
     if (invuln > 0 && Math.floor(invuln * 10) % 2 === 0) return;
-    const sw = air > 0 ? 0 : Math.sin(step) * Hh * 0.05;
+    // legs and arms swing at the walking cadence, and take longer strides the faster you go
+    const sw = air > 0 ? 0 : Math.sin(gait) * Hh * (0.03 + 0.005 * walkKmh());
     ctx.fillStyle = `rgba(0,0,0,${0.22 - air * 0.1})`;
     ctx.beginPath(); ctx.ellipse(x, gy, Hh * 0.2 * (1 - air * 0.35), Hh * 0.05 * (1 - air * 0.35), 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#2d3138';
@@ -2156,9 +2165,7 @@
   function drawPaceGauge() {
     const x = 12, y = H - 22, w = Math.min(160, Math.max(140, W * 0.36)), h = 10;
     const t = (pace - PACE_MIN) / (PACE_MAX - PACE_MIN);
-    // shown as a believable walking speed: 4.5 km/h at the starting pace, gently compressed so the
-    // game's speed-up reads as a brisk walk to a jog (about 3–10 km/h) rather than a car's speed
-    const kmh = 4.5 * Math.pow(speed / SPEED0, 0.5);
+    const kmh = walkKmh();
     ctx.fillStyle = 'rgba(27,30,36,0.72)';
     ctx.beginPath(); ctx.roundRect(x - 6, y - 46, w + 12, h + 54, 6); ctx.fill();
     ctx.textAlign = 'left'; ctx.fillStyle = '#f2d27a';
