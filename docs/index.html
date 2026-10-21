@@ -812,7 +812,8 @@
     const z = position + DRAW * SEG_LEN * 0.8;
     if (nearCrossing(z)) return;
     const seg = segAt(z);
-    fires.push({ z, x: (Math.random() * 2 - 1) * (seg.w - 0.25), kind: 'bin', t: Math.random() * 5, seed: Math.random() * 10 });
+    // half of them are a heap of rubbish bags and boxes set alight instead of a bin (same size)
+    fires.push({ z, x: (Math.random() * 2 - 1) * (seg.w - 0.25), kind: 'bin', pile: Math.random() < 0.5, t: Math.random() * 5, seed: Math.random() * 10 });
   }
   // a Molotov cocktail lobbed in from the street side, aimed just ahead of the walker (like the
   // pigeons' droppings: its ring on the ground shows where it will land)
@@ -1136,7 +1137,7 @@
         if (f.kind === 'patch' && airborne()) continue;
         const r = f.kind === 'bin' ? 0.16 : f.r * fireScale(f);
         if (r > 0.04 && Math.abs(f.x - playerX) < r + 0.07) {
-          if (takeHit(f.kind === 'bin' ? '앗 뜨거! 쓰레기통이 불타요!' : '앗 뜨거! 불길이다!', 'rgba(240,120,30,0.45)', 'burn')) return;
+          if (takeHit(f.kind === 'bin' ? (f.pile ? '앗 뜨거! 쓰레기 더미가 불타요!' : '앗 뜨거! 쓰레기통이 불타요!') : '앗 뜨거! 불길이다!', 'rgba(240,120,30,0.45)', 'burn')) return;
           break;
         }
       }
@@ -1247,7 +1248,7 @@
       // bridge lamps on both parapets; the square's fountain or obelisk out in the open
       if (s.kind === 'bridge' && s.k % 8 === 4) for (const u of [1.08, -BRIDGE_ROAD]) add(zc + 3, () => drawLamp(toScreen(zc + 3, S * s.w * u)));
       if (s.feature) add(zc, () => (s.feature === 'fountain' ? drawFountain : drawObelisk)(toScreen(zc, S * s.w * 3.2)));
-      if (s.terrace && s.i % 2 === 0) add(terraceZ(s), () => (hard ? drawLooterGroup : drawTerrace)(toScreen(terraceZ(s), terraceX(s)), s.i));
+      if (s.terrace && s.i % 2 === 0) add(terraceZ(s), () => (hard ? drawLooterGroup : drawTerrace)(toScreen(terraceZ(s), terraceX(s)), s.i, s.side));
     }
     for (const tr of trucks) {
       if (!tr.march) { add(tr.z, () => drawCleaner(tr)); continue; }
@@ -1833,6 +1834,18 @@
         ctx.fillStyle = `rgba(70,66,66,${0.45 * (1 - u)})`;
         ctx.beginPath(); ctx.arc(p.x + Math.sin(u * 3 + f.seed) * 120 * k + u * 160 * k, p.y - (700 + u * 1500) * k, (130 + u * 260) * k, 0, Math.PI * 2); ctx.fill();
       }
+      if (f.pile) {                                                                       // a heap of bags and boxes
+        const blob = (dx, dy, rx, ry, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(p.x + dx * k, p.y + dy * k, rx * k, ry * k, 0, 0, Math.PI * 2); ctx.fill(); };
+        blob(-120, -80, 140, 95, '#1e2522'); blob(115, -75, 130, 90, '#2f5d46'); blob(0, -60, 150, 80, '#2a2c30');
+        ctx.save(); ctx.translate(p.x - 40 * k, p.y - 190 * k); ctx.rotate(-0.35 + 0.2 * Math.sin(f.seed));
+        ctx.fillStyle = '#b48a5a'; ctx.fillRect(-90 * k, -70 * k, 180 * k, 140 * k);
+        ctx.fillStyle = '#8a6a48'; ctx.fillRect(-90 * k, -10 * k, 180 * k, 14 * k); ctx.restore();
+        blob(80, -200, 110, 85, '#3a4440'); blob(-10, -280, 90, 70, '#1e2522');
+        ctx.fillStyle = '#d9d0c0'; ctx.fillRect(p.x + 130 * k, p.y - 40 * k, 70 * k, 30 * k);   // spilled litter
+        ctx.fillRect(p.x - 230 * k, p.y - 25 * k, 50 * k, 20 * k);
+        for (let j = 0; j < 5; j++) flame(p.x + (j - 2) * 75 * k, p.y - (200 + 90 * Math.cos(j)) * k, 140 * k, (330 + 120 * Math.sin(j * 2.1 + f.seed)) * k, t * 9 + j * 1.3 + f.seed);
+        return;
+      }
       ctx.fillStyle = '#2f5d46'; ctx.fillRect(p.x - 130 * k, p.y - 430 * k, 260 * k, 430 * k);  // the bin
       ctx.fillStyle = '#1f3f30'; ctx.fillRect(p.x - 140 * k, p.y - 450 * k, 280 * k, 40 * k);
       ctx.fillStyle = '#4a4a4a'; ctx.fillRect(p.x - 20 * k, p.y - 430 * k, 40 * k, 430 * k);
@@ -1985,13 +1998,18 @@
   // bulging shopping bags, a stack of shoe boxes, or a crowbar. Seen from behind (running up the
   // street with the pack) or from the front (carrying the goods out of a shop by the wall).
   const LOOTER_COATS = ['#1b1e24', '#2a2c30', '#33363d', '#3a3330', '#2b3340', '#4a4f57'];
-  function drawLooter(p, seed, t, front) {
+  // o.walk: walking (not sprinting); o.carry === false: empty-handed; o.smash: swinging a crowbar
+  // at the shop window; o.flip: mirrored (to face a wall on the left); o.alpha: fading in or out
+  function drawLooter(p, seed, t, front, o = {}) {
     if (!p) return;
     const r = v => { const x = Math.sin(seed * 12.9898 + v * 78.233) * 43758.5453; return x - Math.floor(x); };
-    const Hh = 560 * p.k * (0.9 + 0.2 * r(1)), coat = LOOTER_COATS[Math.floor(r(2) * LOOTER_COATS.length)], prop = r(4);
-    const run = front ? Math.sin(t * 3 + seed) * Hh * 0.015 : Math.sin(t * 11 + seed) * Hh * 0.06;   // a shuffle, or a sprint
-    const bob = front ? 0 : Math.abs(Math.sin(t * 11 + seed)) * Hh * 0.03;
+    const Hh = 560 * p.k * (0.9 + 0.2 * r(1)), coat = LOOTER_COATS[Math.floor(r(2) * LOOTER_COATS.length)];
+    const prop = o.smash ? 1 : o.carry === false ? -1 : o.walk ? r(4) * 0.8 : r(4);         // someone hauling loot holds loot
+    const run = o.walk ? Math.sin(t * 9 + seed) * Hh * 0.045 : front ? Math.sin(t * 3 + seed) * Hh * 0.015 : Math.sin(t * 11 + seed) * Hh * 0.06;
+    const bob = o.walk ? Math.abs(Math.sin(t * 9 + seed)) * Hh * 0.015 : front ? 0 : Math.abs(Math.sin(t * 11 + seed)) * Hh * 0.03;
     ctx.save(); ctx.translate(p.x, p.y);
+    if (o.alpha !== undefined) ctx.globalAlpha = Math.max(0, Math.min(1, o.alpha));
+    if (o.flip) ctx.scale(-1, 1);
     ctx.fillStyle = 'rgba(0,0,0,0.2)';
     ctx.beginPath(); ctx.ellipse(0, 0, Hh * 0.2, Hh * 0.2 * p.flat, 0, 0, Math.PI * 2); ctx.fill();
     ctx.translate(0, -bob);
@@ -2012,7 +2030,22 @@
       ctx.fillStyle = '#e8e4d8'; ctx.fillRect(-Hh * 0.045, -Hh * 0.935, Hh * 0.025, Hh * 0.012); ctx.fillRect(Hh * 0.02, -Hh * 0.935, Hh * 0.025, Hh * 0.012);
     }
     ctx.strokeStyle = coat; ctx.lineWidth = Hh * 0.06; ctx.lineCap = 'round';
-    if (prop < 0.35) {                                                                    // a boxed flat-screen TV, hugged in both arms
+    if (prop < 0) {                                                                       // empty-handed, arms swinging
+      for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sd * Hh * 0.16, -Hh * 0.76); ctx.lineTo(sd * Hh * 0.19, -Hh * 0.48 + sd * run * 0.8); ctx.stroke(); }
+    } else if (o.smash) {                                                                 // wind up slowly, strike hard, rest
+      const s = (t * 1.4 + seed) % 1;
+      const a = s < 0.65 ? -0.5 - 1.9 * (s / 0.65) : s < 0.75 ? -2.4 + 2.9 * ((s - 0.65) / 0.1) : 0.5;
+      const sx = Hh * 0.13, sy = -Hh * 0.76, hx = sx + Math.cos(a) * Hh * 0.24, hy = sy + Math.sin(a) * Hh * 0.24;
+      ctx.beginPath(); ctx.moveTo(-Hh * 0.15, -Hh * 0.76); ctx.lineTo(-Hh * 0.2, -Hh * 0.48); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(hx, hy); ctx.stroke();
+      ctx.strokeStyle = '#8c2a2a'; ctx.lineWidth = Math.max(1, Hh * 0.025);
+      const tx = hx + Math.cos(a) * Hh * 0.3, ty = hy + Math.sin(a) * Hh * 0.3;
+      ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(tx, ty); ctx.stroke();
+      if (s > 0.73 && s < 0.85) {                                                         // glass flying off the window
+        ctx.fillStyle = 'rgba(235,245,250,0.9)';
+        for (let j = 0; j < 6; j++) { const ang = j * 1.1 + seed, d = (s - 0.73) * Hh * 2.2; ctx.fillRect(tx + Math.cos(ang) * d, ty + Math.sin(ang) * d * 0.6 - d * 0.3, Hh * 0.03, Hh * 0.02); }
+      }
+    } else if (prop < 0.35) {                                                             // a boxed flat-screen TV, hugged in both arms
       const bw = Hh * 0.46, bh = Hh * 0.3, by = -Hh * 0.74;
       ctx.fillStyle = '#c8a170'; ctx.fillRect(-bw / 2, by, bw, bh);
       ctx.strokeStyle = '#8a6a48'; ctx.lineWidth = Math.max(1, Hh * 0.012); ctx.strokeRect(-bw * 0.36, by + bh * 0.2, bw * 0.72, bh * 0.55);
@@ -2036,11 +2069,23 @@
     }
     ctx.restore();
   }
-  // hard mode: where the café tables would be, a gang of looters by the wall, hauling goods out
-  function drawLooterGroup(p, seed) {
+  // hard mode: where the café tables would be, a gang looting the shop by the wall. One keeps
+  // smashing at the window with a crowbar; the other two go in empty-handed (fading into the shop),
+  // stay a moment, and come back out towards the street carrying a TV, bags or shoe boxes.
+  function drawLooterGroup(p, seed, S = 1) {
     if (!p) return;
-    const cw = 0.12 * ROAD_W * p.k;
-    for (const [dx, j] of [[-1, 0], [1, 1], [0, 2]]) drawLooter({ ...p, x: p.x + dx * cw, y: p.y - (j === 2 ? 0 : 6 * p.k) }, seed * 3.7 + j, runMs / 1000, true);
+    const cw = 0.12 * ROAD_W * p.k, t = runMs / 1000;
+    drawLooter({ ...p, x: p.x + S * cw * 1.1, y: p.y - 6 * p.k }, seed * 3.7, t, false, { smash: true, flip: S < 0 });
+    for (const j of [1, 2]) {
+      const ph = (t / 3.4 + j * 0.5 + seed * 0.13) % 1, sd = seed * 3.7 + j;
+      if (ph < 0.42) {
+        const u = ph / 0.42;
+        drawLooter({ ...p, x: p.x + S * cw * (-1 + 2.3 * u) }, sd, t, false, { walk: true, carry: false, alpha: 1 - Math.max(0, (u - 0.75) / 0.25) });
+      } else if (ph >= 0.58) {
+        const u = (ph - 0.58) / 0.42;
+        drawLooter({ ...p, x: p.x + S * cw * (1.3 - 2.3 * u) }, sd, t, true, { walk: true, alpha: u / 0.2 });
+      }
+    }
   }
   // green Paris street-cleaning truck seen from behind, hosing the sidewalk edge
   function drawCleaner(tr) {
