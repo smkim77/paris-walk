@@ -621,6 +621,7 @@
       o.connect(g).connect(musicGain); o.start(t); o.stop(t + dur + 0.05);
     }
     function scheduleStep(i, t) {
+      if (mTrack && TRACKS[mTrack]) { const tr = TRACKS[mTrack]; for (const fn of tr.ev[i % tr.len] || []) fn(t); return; }
       const h = i % SONG.len;
       if (h % 2 === 0) {                                  // on the beat: oom-pah-pah
         const beat = (h / 2) % 3, [b, chord, end] = SONG.bars[Math.floor(h / 6)];
@@ -635,6 +636,129 @@
       for (const [n, len, gain] of SONG.notes[h] || []) reed(darken(n) - (mDark ? 12 : 0), t, mBeat() * len * 0.95, mDark ? gain * 0.9 : gain);
     }
 
+    // ---- two more pieces: 'riot' plays in hard mode; 'macabre' is kept as an alternative (test page) ----
+    // mTrack: null = the waltz above; 'macabre' = Saint-Saëns, Danse macabre (1874, public domain),
+    // our own arrangement; 'riot' = an original piece: a growling ostinato, drums, sirens
+    let mTrack = null;
+    const env = (g, t, gain, a, dur) => { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); };
+    function osc(type, f, t, dur, out, detune = 0) { const o = track(ac.createOscillator()); o.type = type; o.frequency.value = f; o.detune.value = detune; o.connect(out); o.start(t); o.stop(t + dur + 0.05); return o; }
+    function pluck(m, t, dur, gain) {               // harp / pizzicato: a bright attack that dies away
+      const g = ac.createGain(); env(g, t, gain, 0.005, dur); g.connect(musicGain);
+      osc('triangle', hz(m), t, dur, g); osc('sine', hz(m) * 2, t, dur * 0.4, g);
+    }
+    function violin(m, t, dur, gain) {              // bowed: soft attack, a little vibrato, bright but filtered
+      const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 2600;
+      const g = ac.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + 0.06);
+      g.gain.setValueAtTime(gain, t + dur * 0.75); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      const lfo = osc('sine', 5.5, t, dur, ac.createGain()), depth = ac.createGain(); depth.gain.value = 14;
+      lfo.disconnect(); lfo.connect(depth);
+      for (const det of [0, 7]) { const o = osc('sawtooth', hz(m), t, dur, f, det); depth.connect(o.detune); }
+      f.connect(g).connect(musicGain);
+    }
+    function xylo(m, t, gain) {                     // the skeletons' bones: a dry, woody tock
+      const g = ac.createGain(); env(g, t, gain, 0.002, 0.18); g.connect(musicGain);
+      osc('sine', hz(m), t, 0.2, g); osc('sine', hz(m) * 3.98, t, 0.06, g);
+    }
+    function kick(t, gain) {
+      const o = track(ac.createOscillator()), g = ac.createGain(); o.type = 'sine';
+      o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.18);
+      env(g, t, gain, 0.003, 0.28); o.connect(g).connect(musicGain); o.start(t); o.stop(t + 0.32);
+    }
+    function snare(t, gain) {
+      const s = track(ac.createBufferSource()), f = ac.createBiquadFilter(), g = ac.createGain();
+      s.buffer = noiseBuf; f.type = 'highpass'; f.frequency.value = 1400; env(g, t, gain, 0.002, 0.14);
+      s.connect(f).connect(g).connect(musicGain); s.start(t, Math.random() * 0.5); s.stop(t + 0.16);
+      const b = ac.createGain(); env(b, t, gain * 0.5, 0.002, 0.08); b.connect(musicGain); osc('triangle', 190, t, 0.08, b);
+    }
+    function hat(t, gain) {
+      const s = track(ac.createBufferSource()), f = ac.createBiquadFilter(), g = ac.createGain();
+      s.buffer = noiseBuf; f.type = 'highpass'; f.frequency.value = 7000; env(g, t, gain, 0.001, 0.04);
+      s.connect(f).connect(g).connect(musicGain); s.start(t, Math.random() * 0.5); s.stop(t + 0.06);
+    }
+    function growl(m, t, dur, gain) {               // the riot bass: two buzzing saws through a low filter
+      const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(700, t); f.frequency.exponentialRampToValueAtTime(220, t + dur);
+      const g = ac.createGain(); env(g, t, gain, 0.006, dur); f.connect(g).connect(musicGain);
+      osc('sawtooth', hz(m), t, dur, f); osc('sawtooth', hz(m), t, dur, f, 9);
+    }
+    function pad(m, t, dur, gain) {                 // a dark held chord tone, swelling in and out
+      const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 900;
+      const g = ac.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + dur * 0.3);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur); f.connect(g).connect(musicGain);
+      osc('sawtooth', hz(m), t, dur, f, -6); osc('sawtooth', hz(m), t, dur, f, 6);
+    }
+    function siren(t, dur, gain) {                  // a French police "pin-pon" in the distance
+      const o = track(ac.createOscillator()), g = ac.createGain(); o.type = 'triangle';
+      for (let k = 0; k * 0.5 < dur; k++) o.frequency.setValueAtTime(k % 2 ? 580 : 435, t + k * 0.5);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + dur * 0.4); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(musicGain); o.start(t); o.stop(t + dur + 0.05);
+    }
+    // a track is a list of events per half-beat step, each a function of the start time
+    function makeTrack(beat, bars, stepsPerBar, fill) {
+      const ev = [], at = (step, fn) => (ev[step] = ev[step] || []).push(fn);
+      fill(at);
+      return { beat, len: bars * stepsPerBar, ev };
+    }
+    const TRACKS = {
+      // Danse macabre in G minor, 3/4: midnight strikes on the harp, the violin's out-of-tune tritone
+      // (A against E flat), then the waltz theme sliding down chromatically (G–F–E–E♭–D) over a
+      // falling bass and pizzicato chords, a second theme falling down the scale with the xylophone
+      // rattling along, and the waltz again
+      macabre: makeTrack(0.32, 46, 6, at => {
+        const B = 6, b = 0.32;
+        const CH = { Gm: [55, 58, 62], F: [57, 60, 65], C7: [58, 60, 64], Cm: [55, 60, 63], D7: [54, 57, 60] };
+        const tune = (bar, beatOff, notes, xy = false) => {
+          let st = bar * B + beatOff * 2;
+          for (const [m, len] of notes) {
+            if (m !== null) at(st, t => { violin(m, t, b * len * 0.92, 0.075); if (xy) xylo(m + 12, t, 0.06); });
+            st += len * 2;
+          }
+        };
+        const waltz = (bar, harm) => harm.forEach(([bs, ch], i) => {
+          at((bar + i) * B, t => bass(bs, t, 0.5));
+          for (const k of [1, 2]) at((bar + i) * B + k * 2, t => { for (const m of CH[ch]) pluck(m, t, 0.22, 0.04); });
+        });
+        for (let k = 0; k < 4; k++) at(k * B, t => { pluck(62, t, 1.7, 0.14); pluck(50, t, 1.7, 0.08); });
+        at(4 * B, t => { violin(69, t, b * 2.8, 0.07); violin(75, t, b * 2.8, 0.07); });
+        at(5 * B, t => { violin(69, t, b * 0.9, 0.06); violin(75, t, b * 0.9, 0.06); });
+        at(5 * B + 2, t => { violin(69, t, b * 0.9, 0.06); violin(75, t, b * 0.9, 0.06); });
+        const A1 = [[79, 2], [79, 1], [77, 2], [77, 1], [76, 2], [76, 1], [75, 2], [75, 1], [74, 1], [76, 1], [79, 1], [78, 1], [76, 1], [74, 1], [76, 2], [76, 1], [78, 2], [74, 1]];
+        const A2 = [[79, 2], [79, 1], [77, 2], [77, 1], [76, 2], [76, 1], [75, 2], [75, 1], [74, 1], [76, 1], [79, 1], [78, 1], [81, 1], [84, 1], [82, 1], [81, 1], [78, 1], [79, 3]];
+        const HA1 = [[43, 'Gm'], [41, 'F'], [40, 'C7'], [39, 'Cm'], [38, 'Gm'], [38, 'D7'], [36, 'C7'], [38, 'D7']];
+        const HA2 = [[43, 'Gm'], [41, 'F'], [40, 'C7'], [39, 'Cm'], [38, 'Gm'], [38, 'D7'], [38, 'D7'], [43, 'Gm']];
+        const Bt = [[86, 1], [84, 1], [82, 1], [81, 1], [79, 1], [78, 1], [79, 2], [74, 1], [75, 2], [74, 1], [84, 1], [82, 1], [81, 1], [79, 1], [78, 1], [76, 1], [78, 2], [81, 1], [74, 2], [74, 1]];
+        const HB = [[43, 'Gm'], [38, 'D7'], [43, 'Gm'], [36, 'Cm'], [36, 'Cm'], [36, 'C7'], [38, 'D7'], [38, 'D7']];
+        tune(5, 2, [[74, 1]]);                                   // pickup into the theme
+        tune(6, 0, A1); waltz(6, HA1);
+        tune(14, 0, A2); waltz(14, HA2);
+        tune(22, 0, Bt, true); waltz(22, HB);
+        tune(30, 0, A1); waltz(30, HA1);
+        tune(38, 0, A2, true); waltz(38, HA2);
+      }),
+      // riot: D minor, 4/4 at a running pace. Layers build up over 16 bars and drop back on the loop:
+      // bass ostinato and kick → snare and a dark chord → hi-hats and a creeping half-step motif → sirens
+      riot: makeTrack(0.42, 16, 8, at => {
+        const ROOTS = [38, 38, 34, 33], CHORDS = [[62, 65, 69], [62, 65, 69], [58, 62, 65], [57, 61, 64]];
+        const OST = [0, 0, 12, 0, 3, 0, 1, 0], e = 0.21;
+        for (let bar = 0; bar < 16; bar++) {
+          const s0 = bar * 8, root = ROOTS[bar % 4];
+          OST.forEach((iv, k) => at(s0 + k, t => growl(root + iv, t, e * 0.9, k % 4 === 0 ? 0.11 : 0.08)));
+          for (const k of [0, 3, 4]) at(s0 + k, t => kick(t, 0.5));
+          if (bar >= 4) {
+            for (const k of [2, 6]) at(s0 + k, t => snare(t, 0.22));
+            at(s0, t => { for (const m of CHORDS[bar % 4]) pad(m, t, e * 8, 0.03); });
+          }
+          if (bar % 8 === 7) for (const k of [4, 5, 6, 7]) at(s0 + k, t => { snare(t, 0.16); snare(t + e / 2, 0.12); });
+          if (bar >= 8) for (let k = 1; k < 8; k += 2) at(s0 + k, t => hat(t, 0.08));
+          if (bar >= 12 && bar % 2 === 0) at(s0, t => siren(t, e * 16, 0.025));
+        }
+        const motif = [[74, 2], [73, 2], [74, 2], [77, 2], [76, 4], [69, 4], [74, 2], [73, 2], [74, 2], [82, 2], [81, 8]];
+        for (const start of [8, 12]) {
+          let st = start * 8;
+          for (const [m, len] of motif) { at(st, t => violin(m, t, e * len * 0.95, 0.05)); st += len; }
+        }
+      })
+    };
+
     return {
       unlock() {
         unlock();
@@ -642,9 +766,11 @@
       },
       ambient(lv) { if (!window.PROMO) ambient(lv); },
       quiet() { stopAll(); },
-      musicStart(fromTop, dark) {
+      // track: undefined keeps the current one; null = the waltz; 'macabre' | 'riot' (trial pieces)
+      musicStart(fromTop, dark, track) {
         if (!ac || !musicGain) return;
         if (dark !== undefined) mDark = dark;
+        if (track !== undefined) mTrack = track;
         if (fromTop) mStep = 0;   // a new game starts the waltz from the beginning; resuming carries on
         musicOn = true; mNext = Math.max(mNext, ac.currentTime + 0.1);
         musicGain.gain.setTargetAtTime(0.22, ac.currentTime, 0.6);   // kept low: background only
@@ -652,7 +778,7 @@
       musicStop() { musicOn = false; if (musicGain) musicGain.gain.setTargetAtTime(0, ac.currentTime, 0.25); },
       musicTick() {
         if (!ac || !musicOn) return;
-        while (mNext < ac.currentTime + 0.4) { scheduleStep(mStep++, mNext); mNext += mBeat() / 2; }
+        while (mNext < ac.currentTime + 0.4) { scheduleStep(mStep++, mNext); mNext += (mTrack && TRACKS[mTrack] ? TRACKS[mTrack].beat : mBeat()) / 2; }
       },
       get muted() { return muted; },
       toggleMute() {
@@ -916,7 +1042,7 @@
     document.body.classList.toggle('hard', hard);
     loadBest();
     $('lbStatus').hidden = true;
-    sfx.unlock(); sfx.play('start'); sfx.musicStart(true, hard);
+    sfx.unlock(); sfx.play('start'); sfx.musicStart(true, hard, hard ? 'riot' : null);   // hard mode: the riot piece
     reset();
     state = 'play';
     $('startScreen').hidden = true; $('overScreen').hidden = true; $('pauseBtn').hidden = false;
