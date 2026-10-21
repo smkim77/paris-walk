@@ -2103,11 +2103,11 @@
     drawJumpCooldown(x, y0 - Hh * 1.1);
     if (invuln > 0 && Math.floor(invuln * 10) % 2 === 0) { playerScreen = { x, y: y0, h: Hh }; return; }
     // legs and arms swing at the walking cadence, take longer strides the faster you go, and the
-    // whole body bobs on each step. From about 6.3 km/h the walk blends into a run (fully by ~8.5):
+    // whole body bobs on each step. From about 5.4 km/h the walk blends into a run (fully by ~7): with the speed rising as you go, that is around 100 m and 330 m at normal pace
     // heels kick up behind, arms bend at the elbow and pump, the body leans in and bounces higher.
     const kmh = walkKmh();
     const amp = Hh * (0.012 + 0.009 * kmh);
-    const run = air > 0 ? 0 : Math.max(0, Math.min(1, (kmh - 6.3) / 2.2));
+    const run = air > 0 ? 0 : Math.max(0, Math.min(1, (kmh - 5.4) / 1.6));
     const sw = air > 0 ? 0 : Math.sin(gait) * amp;
     const bob = air > 0 ? 0 : Math.abs(Math.sin(gait)) * Hh * (Math.max(0, kmh - 3) * 0.006 + run * 0.03);
     const y = y0 - bob, lean = run * Hh * 0.03;
