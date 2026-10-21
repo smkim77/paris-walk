@@ -103,7 +103,7 @@
   /* difficulty picker: 일반 / 하드, one segmented control on the start and game-over screens */
   .diff { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
   .diff .tabs { border-color: rgba(233,238,245,0.7); }
-  .overlay .diff .tabs button { padding: 6px 20px; font-size: 1rem; }
+  .overlay .diff .tabs button { flex: 1 1 0; width: 6em; padding: 6px 0; font-size: 1rem; text-align: center; }   /* both options the same size */
   .overlay .diff .tabs button[aria-checked="true"] { background: #e9eef5; color: #1d3b6e; }
   .overlay .diff .tabs button[data-mode="hard"][aria-checked="true"] { background: #a8352a; color: #fff; }
   .hard-note { font-size: 0.85rem; color: #ffc89a; }
