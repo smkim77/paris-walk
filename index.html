@@ -95,8 +95,9 @@
   /* hard mode: a smoky red street sign and a badge */
   .hard .sign { background: #7a2a1f; border-color: #f2c9a0; outline-color: #7a2a1f; }
   .hard .sign h1::after { content: ' HARD'; font-family: var(--font-data); font-size: 0.75rem; letter-spacing: 0.1em; vertical-align: middle; color: #ffd27a; }
-  /* difficulty picker: 일반 / 하드, one segmented control on the start and game-over screens */
-  .diff { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
+  /* difficulty picker: 일반 / 어려움, one segmented control on the start and game-over screens;
+     the "난이도" label sits above it so the two options themselves are centred */
+  .diff { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.8rem; opacity: 0.95; }
   .diff .tabs { border-color: rgba(233,238,245,0.7); }
   .overlay .diff .tabs button { flex: 1 1 0; width: 6em; padding: 6px 0; font-size: 1rem; text-align: center; }   /* both options the same size */
   .overlay .diff .tabs button[aria-checked="true"] { background: #e9eef5; color: #1d3b6e; }
@@ -131,7 +132,7 @@
       <div class="diff">난이도
         <div class="tabs" role="radiogroup" aria-label="난이도">
           <button type="button" role="radio" data-mode="normal" aria-checked="true">일반</button>
-          <button type="button" role="radio" data-mode="hard" aria-checked="false">하드</button>
+          <button type="button" role="radio" data-mode="hard" aria-checked="false">어려움</button>
         </div>
       </div>
       <p class="hard-note" hidden>폭동이 번진 날의 파리. 불길과 화염병, 약탈자까지 피해야 해요. 순위표도 따로예요.</p>
@@ -151,7 +152,7 @@
       <div class="diff">난이도
         <div class="tabs" role="radiogroup" aria-label="난이도">
           <button type="button" role="radio" data-mode="normal" aria-checked="true">일반</button>
-          <button type="button" role="radio" data-mode="hard" aria-checked="false">하드</button>
+          <button type="button" role="radio" data-mode="hard" aria-checked="false">어려움</button>
         </div>
       </div>
       <button id="retryBtn" type="button">다시 걷기</button>
@@ -161,7 +162,7 @@
       <h2>순위</h2>
       <div class="tabs" role="tablist" aria-label="난이도">
         <button type="button" role="tab" id="tabNormal" aria-selected="true">일반</button>
-        <button type="button" role="tab" id="tabHard" aria-selected="false">하드</button>
+        <button type="button" role="tab" id="tabHard" aria-selected="false">어려움</button>
       </div>
       <div class="tabs" role="tablist" aria-label="기간">
         <button type="button" role="tab" id="tabAll" aria-selected="true">전체</button>
@@ -798,7 +799,7 @@
   function updateHud() {
     $('dist').textContent = Math.floor(dist) + ' m';
     $('score').textContent = Math.floor(score).toLocaleString();
-    $('shoes').textContent = '👞'.repeat(lives) + '·'.repeat(3 - lives);
+    $('shoes').textContent = '👞 ×' + Math.max(0, lives);
   }
   function updatePlace() {
     const i = placeAt(dist);
@@ -1023,6 +1024,8 @@
 
   function takeHit(label, color, sound) {
     lives--; invuln = 1.4; shake = reduceMotion ? 0 : 0.35; flash = { color, t: 0.35 };
+    pace = Math.max(PACE_MIN, pace * 0.7);   // stumbling: down to 70% of the pace you were walking at
+    if (drag) { drag.pace0 = pace; drag.y0 = drag.curY; }   // a finger still on the screen carries on from the slower pace
     texts.push({ text: label, life: 1.1, dy: 0 });
     updateHud();
     if (lives <= 0) { render(); gameOver(); sfx.play(sound); return true; } // after gameOver silenced everything
@@ -1070,13 +1073,13 @@
     else if (d < 400) msg += '바게트 하나 사 들고 돌아가세요.';
     else if (d < 800) msg += '꽤 능숙한 산책가예요.';
     else msg += '당신은 진정한 똥 회피의 달인입니다.';
-    if (sc > best) { best = sc; msg = (hard ? '하드 모드 최고 점수! ' : '최고 점수! ') + msg; try { localStorage.setItem(bestKey(), String(best)); } catch (e) {} }
+    if (sc > best) { best = sc; msg = (hard ? '어려움 최고 점수! ' : '최고 점수! ') + msg; try { localStorage.setItem(bestKey(), String(best)); } catch (e) {} }
     $('best').textContent = best.toLocaleString();
     $('finalScore').textContent = sc.toLocaleString() + '점';
     $('finalDist').textContent = d + ' m 걸음 · ' + p.ko + ' 근처';
     $('overMsg').textContent = msg;
     $('overScreen').hidden = false;
-    $('retryBtn').focus();
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     lbGameOver({ score: sc, dist: d, place: placeAt(dist), duration: Math.round(runMs), mode: hard ? 'hard' : 'normal' });
   }
 
@@ -2574,6 +2577,7 @@
     if ((e.key === 'm' || e.key === 'M') && !e.repeat) { toggleSound(); return; }
     if (e.key === ' ' && state === 'play') { e.preventDefault(); if (!e.repeat) jump(); return; }
     if (keyMap[e.key]) { keys[keyMap[e.key]] = true; drag = null; e.preventDefault(); }
+    if (state === 'over' && e.key === ' ') { e.preventDefault(); return; }
     if ((e.key === ' ' || e.key === 'Enter') && state !== 'play' && document.activeElement?.tagName !== 'BUTTON') { e.preventDefault(); start(hard); }
   });
   addEventListener('keyup', e => { if (keyMap[e.key]) keys[keyMap[e.key]] = false; });
@@ -2705,7 +2709,7 @@
       $('boardList').replaceChildren(); $('boardMe').textContent = errText(e);
     }
   }
-  // the board opens on the difficulty you're playing; tabs switch between 일반 / 하드 and 전체 / 이번 주
+  // the board opens on the difficulty you're playing; tabs switch between 일반 / 어려움 and 전체 / 이번 주
   let boardMode = 'normal';
   function openBoard(period = 'all') { boardPeriod = period; boardMode = hard ? 'hard' : 'normal'; $('boardScreen').hidden = false; $('boardClose').focus(); loadBoard(); }
 
@@ -2776,7 +2780,7 @@
       });
       pendingRun = null;
       const a = r.all.me, w = r.week.me;
-      $('lbStatus').textContent = (run.mode === 'hard' ? '하드 ' : '') + `전체 ${a ? a.rank : '-'}위 · 이번 주 ${w ? w.rank : '-'}위` + (a && a.score === run.score ? ' (내 최고 기록!)' : '');
+      $('lbStatus').textContent = (run.mode === 'hard' ? '어려움 · ' : '') + `전체 ${a ? a.rank : '-'}위 · 이번 주 ${w ? w.rank : '-'}위` + (a && a.score === run.score ? ' (내 최고 기록!)' : '');
     } catch (e) {
       $('lbStatus').textContent = errText(e);
       $('lbActionBtn').textContent = '다시 올리기';
