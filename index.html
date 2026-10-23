@@ -349,13 +349,14 @@
   const cadence = () => 0.2 + 0.36 * walkKmh();
   const SPEED0 = 1050; // forward speed at the start, at normal pace: an easy walk that picks up with distance
   let pace = 1;
-  // jump: Space hops over poop and pee for a moment; another jump only after the cooldown
-  const JUMP_TIME = 0.55, JUMP_COOLDOWN = 1;
+  // jump: Space hops over poop and pee for a moment; you can jump again as soon as you land
+  // (no cooldown: JUMP_COOLDOWN = 0 also keeps the cooldown bar over the head from showing)
+  const JUMP_TIME = 0.55, JUMP_COOLDOWN = 0;
   let jumpT = 0, jumpCd = 0;
   const airborne = () => jumpT > 0;
   const jumpHeight = () => jumpT > 0 ? Math.sin(Math.PI * (1 - jumpT / JUMP_TIME)) : 0;
   function jump() {
-    if (state !== 'play' || jumpCd > 0) return;
+    if (state !== 'play' || jumpT > 0) return;   // not again while still in the air
     jumpT = JUMP_TIME; jumpCd = JUMP_COOLDOWN;
     sfx.play('jump');
   }
