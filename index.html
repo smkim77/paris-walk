@@ -47,8 +47,14 @@
   }
   .pause-btn:focus-visible { outline: 3px solid #f2d27a; }
   .pause-btn.sound { right: auto; left: 10px; z-index: 10; font-size: 1.1rem; }
-  #shoes { color: #f2b8a0; letter-spacing: 0.1em; }
+  #shoes { color: #f2b8a0; letter-spacing: 0; }
   .stage { position: relative; flex: 1; min-height: 0; border-radius: 6px; overflow: hidden; touch-action: none; }
+  /* phones: no text selection, no long-press copy/share callout, no grey tap flash and no double-tap
+     zoom anywhere in the game, all of which got in the way of dragging and tapping (the nickname box
+     still allows typing and selecting) */
+  .wrap, .wrap * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+  .wrap { touch-action: manipulation; }
+  .wrap input { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
   canvas { display: block; width: 100%; height: 100%; }
   .overlay {
     position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -800,7 +806,7 @@
   function updateHud() {
     $('dist').textContent = Math.floor(dist) + ' m';
     $('score').textContent = Math.floor(score).toLocaleString();
-    $('shoes').textContent = '👞 ×' + Math.max(0, lives);
+    $('shoes').textContent = '👞×' + Math.max(0, lives);
   }
   function updatePlace() {
     const i = placeAt(dist);
@@ -2597,6 +2603,12 @@
     drag = null;
   });
   canvas.addEventListener('pointercancel', () => { drag = null; });
+  // belt and braces for browsers that ignore the CSS: no selecting or long-press menu outside the nickname box,
+  // and any selection that slips through is cleared as soon as the walker is touched
+  const inInput = e => { const el = e.target && (e.target.nodeType === 1 ? e.target : e.target.parentElement); return !!(el && el.closest('input, textarea')); };
+  document.addEventListener('selectstart', e => { if (!inInput(e)) e.preventDefault(); });
+  document.addEventListener('contextmenu', e => { if (!inInput(e)) e.preventDefault(); });
+  canvas.addEventListener('pointerdown', () => { const sel = window.getSelection && window.getSelection(); if (sel && sel.rangeCount) sel.removeAllRanges(); });
 
   $('startBtn').addEventListener('click', () => start(hard));
   $('retryBtn').addEventListener('click', () => start(hard));
