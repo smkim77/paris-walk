@@ -1306,11 +1306,11 @@
         }
       }
     }
-    // fire: a burning bin is too tall to jump; a patch of fire on the ground can be jumped
+    // fire: a burning bin, a burning heap of rubbish and a patch of fire on the ground can all be jumped
     if (invuln <= 0) {
       for (const f of fires) {
         if (f.under || Math.abs(f.z - pz) > reach + 40) continue;
-        if (f.kind === 'patch' && airborne()) continue;
+        if (airborne()) continue;
         const r = f.kind === 'bin' ? 0.16 : f.r * fireScale(f);
         if (r > 0.04 && Math.abs(f.x - playerX) < r + 0.07) {
           if (takeHit(f.kind === 'bin' ? (f.pile ? '앗 뜨거! 쓰레기 더미가 불타요!' : '앗 뜨거! 쓰레기통이 불타요!') : '앗 뜨거! 불길이다!', 'rgba(240,120,30,0.45)', 'burn')) return;
