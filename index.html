@@ -47,6 +47,16 @@
   }
   .pause-btn:focus-visible { outline: 3px solid #f2d27a; }
   .pause-btn.sound { right: auto; left: 10px; z-index: 10; font-size: 1.1rem; }
+  /* on-screen pad for phones: ◀ ▶ bottom-left, 점프 bottom-right (touch screens only, only while walking) */
+  .pad { position: absolute; bottom: max(12px, env(safe-area-inset-bottom, 0px)); display: flex; gap: 10px; z-index: 5; }
+  .pad.left { left: 12px; }
+  .pad.right { right: 12px; }
+  .pad button {
+    width: 64px; height: 64px; padding: 0; border-radius: 50%; touch-action: none;
+    border: 2px solid rgba(233,238,245,0.7); background: rgba(27,30,36,0.45); color: #fff; font: 600 1.4rem var(--font-data);
+  }
+  .pad button.on { background: rgba(242,210,122,0.6); color: var(--ink); }
+  .pad button.jump { width: 80px; height: 80px; font: 400 1.15rem var(--font-display); }
   #shoes { color: #f2b8a0; letter-spacing: 0; }
   .stage { position: relative; flex: 1; min-height: 0; border-radius: 6px; overflow: hidden; touch-action: none; }
   /* phones: no text selection, no long-press copy/share callout, no grey tap flash and no double-tap
@@ -130,11 +140,18 @@
     <canvas id="c"></canvas>
     <button class="pause-btn" id="pauseBtn" type="button" aria-label="일시 정지" hidden>II</button>
     <button class="pause-btn sound" id="soundBtn" type="button" aria-label="소리 끄기">🔊</button>
+    <div class="pad left" id="padL" hidden>
+      <button type="button" id="padLeft" tabindex="-1" aria-label="왼쪽으로">◀</button>
+      <button type="button" id="padRight" tabindex="-1" aria-label="오른쪽으로">▶</button>
+    </div>
+    <div class="pad right" id="padR" hidden>
+      <button type="button" id="padJump" class="jump" tabindex="-1" aria-label="점프">점프</button>
+    </div>
     <div class="overlay" id="startScreen">
       <h2>Bonne promenade!</h2>
       <p>그저 파리를 산책하고 싶었을 뿐인데, 이 도시는 그냥 걷게 두질 않네요. 개똥, 오줌 웅덩이, 비둘기, 차와 자전거를 피해 구두 세 켤레가 망가지기 전에 최대한 멀리 가 보세요.</p>
       <p>서두를수록 점수가 커지지만, 구석으로만 걸으면 오히려 위험해요.</p>
-      <p class="keys">← → 이동 · ↑ ↓ 속도 · Space 점프 · P 정지 · M 소리<br>(휴대폰: 드래그로 이동·속도, 탭으로 점프)</p>
+      <p class="keys">← → 이동 · ↑ ↓ 속도 · Space 점프 · P 정지 · M 소리<br>(휴대폰: ◀ ▶ 버튼이나 드래그로 이동, 위아래 드래그로 속도, 점프 버튼이나 탭으로 점프)</p>
       <div class="diff">난이도
         <div class="tabs" role="radiogroup" aria-label="난이도">
           <button type="button" role="radio" data-mode="normal" aria-checked="true">일반</button>
@@ -1051,6 +1068,7 @@
     reset();
     state = 'play';
     $('startScreen').hidden = true; $('overScreen').hidden = true; $('pauseBtn').hidden = false;
+    showPad(true);
     plate = { text: PLACES[0].name, ko: PLACES[0].ko, life: 2.6 };
     last = performance.now();
     requestAnimationFrame(loop);
@@ -1060,11 +1078,13 @@
   function togglePause() {
     if (state === 'play') {
       state = 'paused'; keys = {}; drag = null;
+      showPad(false);
       sfx.quiet();
       render();
       $('pauseBtn').textContent = '▶'; $('pauseBtn').setAttribute('aria-label', '계속하기');
     } else if (state === 'paused') {
       state = 'play';
+      showPad(true);
       sfx.musicStart();
       $('pauseBtn').textContent = 'II'; $('pauseBtn').setAttribute('aria-label', '일시 정지');
       last = performance.now();
@@ -1075,6 +1095,7 @@
   function gameOver() {
     state = 'over';
     $('pauseBtn').hidden = true;
+    showPad(false);
     sfx.quiet(); sfx.play('over');
     const d = Math.floor(dist), p = PLACES[placeAt(dist)], sc = Math.floor(score);
     let msg = `${p.ko} 근처에서 구두가 다 망가졌습니다. `;
@@ -2560,7 +2581,7 @@
 
   // pace gauge in the bottom-left corner, like OutRun's speedometer
   function drawPaceGauge() {
-    const x = 12, y = H - 22, w = Math.min(160, Math.max(140, W * 0.36)), h = 10;
+    const x = 12, y = H - 22 - (padOn() ? 96 : 0), w = Math.min(160, Math.max(140, W * 0.36)), h = 10;   // above the ◀ ▶ buttons on phones
     const t = (pace - PACE_MIN) / (PACE_MAX - PACE_MIN);
     const kmh = walkKmh();
     ctx.fillStyle = 'rgba(27,30,36,0.72)';
@@ -2623,6 +2644,26 @@
   document.addEventListener('selectstart', e => { if (!inInput(e)) e.preventDefault(); });
   document.addEventListener('contextmenu', e => { if (!inInput(e)) e.preventDefault(); });
   canvas.addEventListener('pointerdown', () => { const sel = window.getSelection && window.getSelection(); if (sel && sel.rangeCount) sel.removeAllRanges(); });
+
+  // on-screen pad (phones): hold ◀ / ▶ to walk sideways, press 점프 to jump. Each button follows its
+  // own finger (pointer capture), so you can keep walking sideways while tapping 점프.
+  const TOUCH_PAD = matchMedia('(hover: none) and (pointer: coarse)').matches;
+  const padOn = () => TOUCH_PAD && (state === 'play' || state === 'paused');
+  function showPad(on) {
+    $('padL').hidden = $('padR').hidden = !(on && TOUCH_PAD);
+    if (!on) { keys.left = keys.right = false; for (const id of ['padLeft', 'padRight', 'padJump']) $(id).classList.remove('on'); }
+  }
+  for (const [id, key] of [['padLeft', 'left'], ['padRight', 'right']]) {
+    const b = $(id);
+    b.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      keys[key] = true; drag = null; b.classList.add('on');
+      if (b.setPointerCapture) b.setPointerCapture(e.pointerId);
+    });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, () => { keys[key] = false; b.classList.remove('on'); });
+  }
+  $('padJump').addEventListener('pointerdown', e => { e.preventDefault(); $('padJump').classList.add('on'); jump(); });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) $('padJump').addEventListener(ev, () => $('padJump').classList.remove('on'));
 
   $('startBtn').addEventListener('click', () => start(hard));
   $('retryBtn').addEventListener('click', () => start(hard));
