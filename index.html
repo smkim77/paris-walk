@@ -906,6 +906,8 @@
     drops.push({ sx: b.x, sy: b.y, z, x, t: 0, T, r: 0.2 });
     sfx.play('drop', T); // falling whistle: a heads-up that something is coming down
   }
+  // a landed dropping on the pavement: hit radius in road units (drawStain's splat is 55 units across the middle)
+  const STAIN_R = 0.1;
   const CAR_COLORS = ['#c8372d', '#e8e4d8', '#2f5d46', '#1d3b6e', '#d9a441', '#6b6f78'];
   // Irregular traffic: usually a long quiet gap, sometimes a car right behind another,
   // now and then a really long lull.
@@ -1198,17 +1200,17 @@
       }
     }
     for (const f of fires) { f.t += dt; if (f.kind === 'patch') f.life -= dt; }
-    // a Molotov smashes where it lands: a direct hit if you're there, and a patch of fire either way
+    // a Molotov smashes where it lands and leaves a patch of fire; the bottle itself doesn't hurt,
+    // only fire you walk into later does (see the fire collisions below). Aimed at the walker, it
+    // often lands right underfoot: that patch is behind you a moment later and never hurts (under).
     for (let i = molotovs.length - 1; i >= 0; i--) {
       const m = molotovs[i];
       m.t += dt;
       if (m.t < m.T) continue;
       molotovs.splice(i, 1);
       sfx.play('shatter');
-      fires.push({ z: m.z, x: m.x, r: 0.28, kind: 'patch', t: 0, life: 4.5, seed: Math.random() * 10 });
-      if (invuln <= 0 && Math.abs(m.x - playerX) < 0.3 && Math.abs(m.z - pz) < 600) {
-        if (takeHit('화염병이다!', 'rgba(240,120,30,0.5)', 'burn')) return;
-      }
+      const under = Math.abs(m.z - pz) < 150 && Math.abs(m.x - playerX) < 0.28 + 0.07;
+      fires.push({ z: m.z, x: m.x, r: 0.28, kind: 'patch', t: 0, life: 4.5, seed: Math.random() * 10, under });
     }
 
     if (jumpT > 0) jumpT = Math.max(0, jumpT - dt);
@@ -1254,15 +1256,16 @@
     if (invuln > 0) invuln -= dt;
     if (shake > 0) shake -= dt;
 
-    // bird droppings land when their timer runs out
+    // bird droppings land when their timer runs out and stay on the pavement; the falling dropping
+    // itself doesn't hurt, stepping in one later does (see the collisions below). One that lands
+    // right underfoot is behind you a moment later and never counts (under).
     for (let i = drops.length - 1; i >= 0; i--) {
       const d = drops[i];
       d.t += dt;
       if (d.t < d.T) continue;
       drops.splice(i, 1);
-      if (invuln <= 0 && Math.abs(d.x - playerX) < d.r + 0.05 && Math.abs(d.z - pz) < 600) {
-        if (takeHit('새똥 명중!', 'rgba(244,242,234,0.6)', 'birdHit')) return;
-      } else stains.push({ z: d.z, x: d.x, seed: Math.random() * 10 });
+      const under = Math.abs(d.z - pz) < 150 && Math.abs(d.x - playerX) < STAIN_R + 0.07;
+      stains.push({ z: d.z, x: d.x, seed: Math.random() * 10, under });
     }
 
     // collisions with things on the pavement
@@ -1275,6 +1278,17 @@
           const label = p.kind === 'pee' ? '첨벙! 오줌이잖아!' : p.flies > 0.5 ? '윙윙~ 파리 떼!' : '으악, 밟았다!';
           const sound = p.kind === 'pee' ? 'pee' : p.flies > 0.5 ? 'flies' : 'splat';
           if (takeHit(label, p.kind === 'pee' ? 'rgba(232,200,74,0.45)' : 'rgba(107,68,35,0.45)', sound)) return;
+          break;
+        }
+      }
+    }
+    // bird droppings on the pavement: stepped in like poop, cleared by a jump
+    if (invuln <= 0 && !airborne()) {
+      for (const st of stains) {
+        if (st.under || Math.abs(st.z - pz) > reach) continue;
+        if (Math.abs(st.x - playerX) < STAIN_R + 0.07) {
+          stains.splice(stains.indexOf(st), 1);
+          if (takeHit('으악, 새똥 밟았다!', 'rgba(244,242,234,0.6)', 'birdHit')) return;
           break;
         }
       }
@@ -1295,7 +1309,7 @@
     // fire: a burning bin is too tall to jump; a patch of fire on the ground can be jumped
     if (invuln <= 0) {
       for (const f of fires) {
-        if (Math.abs(f.z - pz) > reach + 40) continue;
+        if (f.under || Math.abs(f.z - pz) > reach + 40) continue;
         if (f.kind === 'patch' && airborne()) continue;
         const r = f.kind === 'bin' ? 0.16 : f.r * fireScale(f);
         if (r > 0.04 && Math.abs(f.x - playerX) < r + 0.07) {
